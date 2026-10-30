@@ -1,0 +1,57 @@
+<!doctype html><html lang="ja"><head><meta charset="utf-8"><meta name="viewport" content="width=device-width,initial-scale=1"><title>STRATA CUDA ソース読解 — Qwen3.8 125B MoE エンジンを読む</title><meta name="description" content="Strata（Qwen3.8-Flash-Next 125B MoE）の CUDA 実装 57 ファイル / 34,312 行の読解。9 章 + 図 7 枚。"><link rel="icon" href="favicon.svg" type="image/svg+xml"><style>:root{--paper:#fffdf8;--ink:#191510;--muted:#605a4e;--rule:#d6d0c0;--link:#1f4e79;--accent:#9e2b25;--tint:#f5f2e8}
+*{box-sizing:border-box}
+body{background:var(--paper);color:var(--ink);font-family:"Hiragino Mincho ProN","Yu Mincho",YuMincho,Georgia,"Times New Roman",serif;font-size:16.5px;line-height:1.95;margin:0;-webkit-font-smoothing:antialiased}
+.wrap{max-width:760px;margin:0 auto;padding:52px 26px 110px}
+.masthead{font-family:"SF Mono",Menlo,monospace;font-size:11px;letter-spacing:.16em;text-transform:uppercase;color:var(--muted);border-bottom:1px solid var(--rule);padding-bottom:10px;display:flex;justify-content:space-between;gap:14px;margin-bottom:42px}
+.masthead a{color:var(--muted);text-decoration:none;border:0}
+.masthead a:hover{color:var(--link)}
+h1{font-size:30px;line-height:1.45;font-weight:600;margin:0 0 .35em;letter-spacing:.01em}
+h1 small{display:block;font-size:15px;font-weight:400;color:var(--muted);margin-top:.6em;letter-spacing:.02em}
+h2{font-size:18px;font-weight:600;margin:2.6em 0 .8em;padding-bottom:.3em;border-bottom:1px solid var(--rule);letter-spacing:.02em}
+h2 span{font-family:"SF Mono",Menlo,monospace;font-size:11px;color:var(--muted);letter-spacing:.14em;margin-left:.6em;font-weight:400;text-transform:uppercase}
+h3{font-size:16.5px;font-weight:700;margin:2em 0 .5em;letter-spacing:.01em}
+p{margin:.95em 0;text-align:justify}
+a{color:var(--link);text-decoration:none;border-bottom:1px solid rgba(31,78,121,.28)}
+a:hover{border-bottom-color:var(--link)}
+strong{font-weight:700}
+code{font-family:"SF Mono",Menlo,ui-monospace,monospace;font-size:13px;background:var(--tint);padding:.05em .32em;word-break:break-word}
+pre{background:var(--tint);border:1px solid var(--rule);border-left:3px solid #b8b0a0;padding:13px 16px;overflow-x:auto;font-size:12.6px;line-height:1.68;margin:1.5em 0}
+pre code{background:none;padding:0;font-size:12.6px}
+blockquote{margin:1.5em 0;padding:.15em 0 .15em 1.1em;border-left:2px solid #c3bba9;color:#3b382f;text-align:left}
+blockquote p{margin:.4em 0}
+table{border-collapse:collapse;width:100%;margin:1.6em 0;font-size:13.8px;font-variant-numeric:tabular-nums;display:block;overflow-x:auto}
+th,td{border:0;border-bottom:1px solid #e4dfd1;padding:7px 12px 7px 0;text-align:left;vertical-align:top}
+thead th{border-bottom:1.4px solid var(--ink);font-weight:700;white-space:nowrap;background:none}
+ul,ol{padding-left:1.5em;margin:.9em 0}
+li{margin:.32em 0}
+hr{border:0;border-top:1px solid var(--rule);margin:2.4em 0}
+.figrow{display:block;margin:2em -82px}
+.figlink{display:block;border:0;margin:0 0 1.3em}
+.figlink:last-child{margin-bottom:0}
+.figlink img{width:100%;display:block;border:1px solid var(--rule)}
+.figcap{display:block;font-size:12.6px;color:var(--muted);margin-top:.55em;text-align:center;font-family:"SF Mono",Menlo,monospace;letter-spacing:.02em}
+.abstract{font-size:15.5px;color:#2c2a24;margin:1.5em 0 2.2em}
+.meta{width:100%;border-collapse:collapse;font-size:13.4px;margin:0 0 2.8em;font-family:"SF Mono",Menlo,monospace;display:table}
+.meta th{text-align:left;font-weight:400;color:var(--muted);width:9em;border-top:1px solid var(--rule);padding:7px 10px 7px 0;vertical-align:top;letter-spacing:.04em}
+.meta td{border-top:1px solid var(--rule);padding:7px 0;vertical-align:top}
+.toc{list-style:none;padding:0;margin:1.2em 0}
+.toc li{border-top:1px solid #e8e3d5;padding:.9em 0}
+.toc li:last-child{border-bottom:1px solid #e8e3d5}
+.toc .n{font-family:"SF Mono",Menlo,monospace;font-size:11.5px;color:var(--muted);letter-spacing:.12em}
+.toc .row{display:block;border:0;color:inherit;padding:0}
+.toc .row:hover .t{color:var(--link);border-bottom:1px solid rgba(31,78,121,.3)}
+.toc .t{display:inline-block;font-size:16.5px;margin:.1em 0 .18em;border-bottom:1px solid transparent}
+.toc .d{display:block;font-size:14px;color:var(--muted);line-height:1.7}
+.toc .s{font-family:"SF Mono",Menlo,monospace;font-size:11px;color:#8b8677;letter-spacing:.06em}
+.gallery{display:grid;grid-template-columns:1fr 1fr;gap:24px;margin:1.6em 0}
+.gallery a{display:block;border:0;color:inherit}
+.gallery img{width:100%;display:block;border:1px solid var(--rule)}
+.gallery .cap{font-size:12.6px;margin-top:.55em;font-family:"SF Mono",Menlo,monospace;color:var(--ink)}
+.gallery .cd{font-size:12.4px;color:var(--muted);line-height:1.65;margin-top:.2em}
+footer{margin-top:4em;padding-top:1.2em;border-top:1px solid var(--rule);font-size:13.4px;color:var(--muted)}
+footer p{margin:.6em 0}
+.pager{display:flex;justify-content:space-between;gap:16px;font-size:13.4px;margin-top:3.2em;padding-top:1.1em;border-top:1px solid var(--rule);color:var(--muted)}
+@media(max-width:1100px){.figrow{margin:1.8em 0}}
+@media(max-width:640px){body{font-size:16px}.wrap{padding:32px 18px 80px}h1{font-size:23px}.gallery{grid-template-columns:1fr}}
+@media print{body{background:#fff;font-size:11pt}.masthead,.pager{display:none}a{color:#000;border:0}pre,table,.figlink{page-break-inside:avoid}}
+</style></head><body><div class="wrap"><div class="masthead"><span>STRATA CUDA ソース読解</span><span>v0.1.49 · HEAD 61b3fb5</span></div><h1>STRATA CUDA ソース読解<small>1 枚の GPU で 125B MoE を回すエンジンを、行番号から読む</small></h1><p class="abstract">対象は <b>Qwen3.8-Flash-Next 125B</b>（48 層 × 512 expert = <b>24,576</b>、top-10/token）を動かす <b>Strata</b> の CUDA/HIP 実装。<b>57 ファイル / 34,312 行</b>を 9 章に分け、 全章に「なぜそう書くのか」の解説と、データがどこをどう動くかの図を付けた。</p><table class="meta"><tbody><tr><th>対象</th><td>Qwen3.8-Flash-Next 125B（48 層 × 512 expert = 24,576、top-10/token）を動かす Strata の CUDA/HIP 実装</td></tr><tr><th>規模</th><td>57 ファイル / 34,312 行（cuda 45 · prefill 9 · core 3）</td></tr><tr><th>構成</th><td>全 9 章 + 図 7 枚。各章に「なぜそう書くのか」の解説とメモリ移動の図</td></tr><tr><th>リビジョン</th><td>HEAD <code>61b3fb5</code>（v0.1.49）</td></tr><tr><th>読み方</th><td>まず 00（総覧）と 08（目録）→ 図で流れを掴む → 該当章 → ソース</td></tr></tbody></table><h2>目次 <span>00–08</span></h2><ul class="toc"><li><a class="row" href="docs/00_overview.html"><span class="t">総覧 — 何をどう走らせるのか</span><span class="d">125B MoE を 1 枚で回す分割（VRAM / RAM / SSD）と、数字の地図。</span><span class="n">00 · 12 KB</span></a></li><li><a class="row" href="docs/01_memory.html"><span class="t">メモリ階層 — SSD から SMEM まで</span><span class="d">4 層の置き場所、pinned リング、doorbell、帯域の梯子。</span><span class="n">01 · 10 KB</span></a></li><li><a class="row" href="docs/02_quant.html"><span class="t">量子化 — 13 形式が 3 つのコード幅</span><span class="d">S2（Q2_0）の 20 バイト・ブロック、Q8 系、i-quant の配置。</span><span class="n">02 · 6.9 KB</span></a></li><li><a class="row" href="docs/03_decode_gemv.html"><span class="t">Decode GEMV — 31.64 GiB を 1 トークンで</span><span class="d">s_gemv.cu 全行注釈。1 スレッド 1 出力行の内側。</span><span class="n">03 · 16.5 KB</span></a></li><li><a class="row" href="docs/04_moe.html"><span class="t">MoE — 512 個から 10 個を選ぶ</span><span class="d">router、3 つの行き先、combine、実測タイミング。</span><span class="n">04 · 21 KB</span></a></li><li><a class="row" href="docs/05_attention_gdn.html"><span class="t">注意機構と GDN — 選ぶ attention、状態の再帰</span><span class="d">qsa / indexer / GDN の再帰、KV の 3 層。</span><span class="n">05 · 21 KB</span></a></li><li><a class="row" href="docs/06_prefill.html"><span class="t">Prefill — 計算律速に切り替わる世界</span><span class="d">8,192 チャンク、融合カタログ、magic float、parity の証明。</span><span class="n">06 · 17.9 KB</span></a></li><li><a class="row" href="docs/07_misc.html"><span class="t">残り — sampler / verify / PLE / GR</span><span class="d">Philox、MTP 検証、PLE の 3 経路、GR、runtime の毒。</span><span class="n">07 · 17 KB</span></a></li><li><a class="row" href="docs/08_catalog.html"><span class="t">目録 — 読む順と事件簿</span><span class="d">全 57 ファイルの表、「1 ファイル 1 事件」、章へのリンク。</span><span class="n">08 · 11.5 KB</span></a></li></ul><h2>図一覧 <span>7 figures</span></h2><div class="gallery"><a href="diagrams/light/png/memory-hierarchy.png"><img src="diagrams/light/png/memory-hierarchy.png" alt="メモリ階層"><div class="cap">01 メモリ階層</div><div class="cd">SSD → pinned RAM → VRAM → SMEM。帯域の梯子と doorbell の逆流。</div></a><a href="diagrams/light/png/token-pipeline.png"><img src="diagrams/light/png/token-pipeline.png" alt="トークンパイプライン"><div class="cap">00 1 トークン・1 レイヤー</div><div class="cd">pre / post の切れ目、GPU と CPU が重なる区間、×48。</div></a><a href="diagrams/light/png/expert-flow.png"><img src="diagrams/light/png/expert-flow.png" alt="expert の流れ"><div class="cap">04 expert の振り分け</div><div class="cd">router → (id,w)×10 → 3 つの行き先 → combine。実測タイミング付き。</div></a><a href="diagrams/light/png/kv-cache.png"><img src="diagrams/light/png/kv-cache.png" alt="KV キャッシュ"><div class="cap">05 KV キャッシュ 3 層（+ 01 メモリ階層）</div><div class="cd">ページ計算式、hot 64K、q8/q4 圧縮、書き込み・読み出し経路。</div></a><a href="diagrams/light/png/quant-block.png"><img src="diagrams/light/png/quant-block.png" alt="量子化ブロック"><div class="cap">02 量子化ブロック</div><div class="cd">S2 の 20 バイト、LSB 先の 2 ビット、decode と prefill の内側。</div></a><a href="diagrams/light/png/streams-doorbell.png"><img src="diagrams/light/png/streams-doorbell.png" alt="ストリームと doorbell"><div class="cap">01 2 グラフと doorbell</div><div class="cd">なぜ 2 つに割るのか、キャプチャ監査の一般則。</div></a><a href="diagrams/light/png/prefill.png"><img src="diagrams/light/png/prefill.png" alt="prefill"><div class="cap">06 prefill</div><div class="cd">チャンク → 密 GEMM → router → expert GEMM 4 系統 → magic float。</div></a></div><footer><p><b>出典</b>: github.com/Niko1221/Strata HEAD <code>61b3fb5</code>（v0.1.49）。行番号・定数はこのリビジョンのもの。</p><p><b>注意</b>: 公式ドキュメントではない。推測で埋めた箇所は本文に「推測」と明記した。図は各章の PNG を同梱している。</p></footer></div></body></html>

@@ -1,0 +1,383 @@
+<!doctype html><html lang="ja"><head><meta charset="utf-8"><meta name="viewport" content="width=device-width,initial-scale=1"><title>03. Decode GEMV — 31.64 GiB を 1 トークンで読む — STRATA CUDA ソース読解</title><link rel="icon" href="../favicon.svg" type="image/svg+xml"><style>:root{--paper:#fffdf8;--ink:#191510;--muted:#605a4e;--rule:#d6d0c0;--link:#1f4e79;--accent:#9e2b25;--tint:#f5f2e8}
+*{box-sizing:border-box}
+body{background:var(--paper);color:var(--ink);font-family:"Hiragino Mincho ProN","Yu Mincho",YuMincho,Georgia,"Times New Roman",serif;font-size:16.5px;line-height:1.95;margin:0;-webkit-font-smoothing:antialiased}
+.wrap{max-width:760px;margin:0 auto;padding:52px 26px 110px}
+.masthead{font-family:"SF Mono",Menlo,monospace;font-size:11px;letter-spacing:.16em;text-transform:uppercase;color:var(--muted);border-bottom:1px solid var(--rule);padding-bottom:10px;display:flex;justify-content:space-between;gap:14px;margin-bottom:42px}
+.masthead a{color:var(--muted);text-decoration:none;border:0}
+.masthead a:hover{color:var(--link)}
+h1{font-size:30px;line-height:1.45;font-weight:600;margin:0 0 .35em;letter-spacing:.01em}
+h1 small{display:block;font-size:15px;font-weight:400;color:var(--muted);margin-top:.6em;letter-spacing:.02em}
+h2{font-size:18px;font-weight:600;margin:2.6em 0 .8em;padding-bottom:.3em;border-bottom:1px solid var(--rule);letter-spacing:.02em}
+h2 span{font-family:"SF Mono",Menlo,monospace;font-size:11px;color:var(--muted);letter-spacing:.14em;margin-left:.6em;font-weight:400;text-transform:uppercase}
+h3{font-size:16.5px;font-weight:700;margin:2em 0 .5em;letter-spacing:.01em}
+p{margin:.95em 0;text-align:justify}
+a{color:var(--link);text-decoration:none;border-bottom:1px solid rgba(31,78,121,.28)}
+a:hover{border-bottom-color:var(--link)}
+strong{font-weight:700}
+code{font-family:"SF Mono",Menlo,ui-monospace,monospace;font-size:13px;background:var(--tint);padding:.05em .32em;word-break:break-word}
+pre{background:var(--tint);border:1px solid var(--rule);border-left:3px solid #b8b0a0;padding:13px 16px;overflow-x:auto;font-size:12.6px;line-height:1.68;margin:1.5em 0}
+pre code{background:none;padding:0;font-size:12.6px}
+blockquote{margin:1.5em 0;padding:.15em 0 .15em 1.1em;border-left:2px solid #c3bba9;color:#3b382f;text-align:left}
+blockquote p{margin:.4em 0}
+table{border-collapse:collapse;width:100%;margin:1.6em 0;font-size:13.8px;font-variant-numeric:tabular-nums;display:block;overflow-x:auto}
+th,td{border:0;border-bottom:1px solid #e4dfd1;padding:7px 12px 7px 0;text-align:left;vertical-align:top}
+thead th{border-bottom:1.4px solid var(--ink);font-weight:700;white-space:nowrap;background:none}
+ul,ol{padding-left:1.5em;margin:.9em 0}
+li{margin:.32em 0}
+hr{border:0;border-top:1px solid var(--rule);margin:2.4em 0}
+.figrow{display:block;margin:2em -82px}
+.figlink{display:block;border:0;margin:0 0 1.3em}
+.figlink:last-child{margin-bottom:0}
+.figlink img{width:100%;display:block;border:1px solid var(--rule)}
+.figcap{display:block;font-size:12.6px;color:var(--muted);margin-top:.55em;text-align:center;font-family:"SF Mono",Menlo,monospace;letter-spacing:.02em}
+.abstract{font-size:15.5px;color:#2c2a24;margin:1.5em 0 2.2em}
+.meta{width:100%;border-collapse:collapse;font-size:13.4px;margin:0 0 2.8em;font-family:"SF Mono",Menlo,monospace;display:table}
+.meta th{text-align:left;font-weight:400;color:var(--muted);width:9em;border-top:1px solid var(--rule);padding:7px 10px 7px 0;vertical-align:top;letter-spacing:.04em}
+.meta td{border-top:1px solid var(--rule);padding:7px 0;vertical-align:top}
+.toc{list-style:none;padding:0;margin:1.2em 0}
+.toc li{border-top:1px solid #e8e3d5;padding:.9em 0}
+.toc li:last-child{border-bottom:1px solid #e8e3d5}
+.toc .n{font-family:"SF Mono",Menlo,monospace;font-size:11.5px;color:var(--muted);letter-spacing:.12em}
+.toc .row{display:block;border:0;color:inherit;padding:0}
+.toc .row:hover .t{color:var(--link);border-bottom:1px solid rgba(31,78,121,.3)}
+.toc .t{display:inline-block;font-size:16.5px;margin:.1em 0 .18em;border-bottom:1px solid transparent}
+.toc .d{display:block;font-size:14px;color:var(--muted);line-height:1.7}
+.toc .s{font-family:"SF Mono",Menlo,monospace;font-size:11px;color:#8b8677;letter-spacing:.06em}
+.gallery{display:grid;grid-template-columns:1fr 1fr;gap:24px;margin:1.6em 0}
+.gallery a{display:block;border:0;color:inherit}
+.gallery img{width:100%;display:block;border:1px solid var(--rule)}
+.gallery .cap{font-size:12.6px;margin-top:.55em;font-family:"SF Mono",Menlo,monospace;color:var(--ink)}
+.gallery .cd{font-size:12.4px;color:var(--muted);line-height:1.65;margin-top:.2em}
+footer{margin-top:4em;padding-top:1.2em;border-top:1px solid var(--rule);font-size:13.4px;color:var(--muted)}
+footer p{margin:.6em 0}
+.pager{display:flex;justify-content:space-between;gap:16px;font-size:13.4px;margin-top:3.2em;padding-top:1.1em;border-top:1px solid var(--rule);color:var(--muted)}
+@media(max-width:1100px){.figrow{margin:1.8em 0}}
+@media(max-width:640px){body{font-size:16px}.wrap{padding:32px 18px 80px}h1{font-size:23px}.gallery{grid-template-columns:1fr}}
+@media print{body{background:#fff;font-size:11pt}.masthead,.pager{display:none}a{color:#000;border:0}pre,table,.figlink{page-break-inside:avoid}}
+</style></head><body><div class="wrap"><div class="masthead"><a href="../index.html">← 目次 / 図一覧</a><span>STRATA 読解 · 03 / 08</span></div><article><h1>03. Decode GEMV — 31.64 GiB を 1 トークンで読む</h1>
+<blockquote>
+<p>対象: <code>src/kernels/cuda/s_gemv.cu</code>（694 行、<strong>全行注釈</strong>）
+関連: <code>s2_gemv*.cu</code>, <code>iq_kernels.cu</code>, <code>native_mmvq.cu</code>, <code>quantize_act.cu</code></p>
+</blockquote>
+<p>decode の 1 トークンは、モデルの重み（38 GiB のうち VRAM 常駐分 + top-10 expert）を
+<strong>1 回ずつ</strong>読む。したがって decode は完全な <strong>メモリ帯域律速</strong>であり、
+カーネルの仕事は「1 バイトの重みを、何命令・何回のメモリアクセスで消費するか」を最小化すること。</p>
+<p><code>s_gemv.cu</code> には 4 つの実装が同居している。この章はその全部を、コメントに書かれた
+<strong>実測値と失敗談</strong>ごと読む。</p>
+<table>
+<thead>
+<tr>
+<th>実装</th>
+<th>行</th>
+<th>用途</th>
+<th>並列度</th>
+</tr>
+</thead>
+<tbody><tr>
+<td><code>s_gemv_kernel</code></td>
+<td>301–340</td>
+<td>素直な参照実装（1 thread = 1 出力行）</td>
+<td>n_out</td>
+</tr>
+<tr>
+<td><code>s_gemv_split_kernel</code></td>
+<td>400–474</td>
+<td><code>attn_output</code> / <code>shared_expert</code> 用</td>
+<td>n_out × TPR</td>
+</tr>
+<tr>
+<td><code>s_gemv_q8k_kernel</code></td>
+<td>90–127</td>
+<td>Q8_K 活性（K-quant / IQ4_XS）</td>
+<td>n_out</td>
+</tr>
+<tr>
+<td><code>s_gemv_q8_split_kernel</code></td>
+<td>142–299</td>
+<td><strong>主力</strong>。Q8_K / Q8_0 両対応、1 warp/行</td>
+<td>n_out × 8</td>
+</tr>
+</tbody></table>
+<hr>
+<h2>1. 16 バイトのコードブックが 2.12 倍を稼ぐ</h2>
+<p>ファイル冒頭、19 行目からの長いコメントは IQ4_NL のコードブックの話。</p>
+<pre><code class="language-cpp">__constant__ signed char kIq4Nl[16] = {-127, -104, -83, -65, -49, -35, -22, -10,
+                                        1,   13,   25,  38,  53,  69,  89,  113};
+</code></pre>
+<blockquote>
+<p><strong>IT WAS IN <code>__constant__</code> FOR THE WRONG REASON, AND IT COST 2.12x.</strong>
+旧コメントは「全スレッドが読むし、ラウンチ全体で同じ 16 値だから」と constant メモリを正当化していた。
+その理由付けは<strong>まったく逆</strong>である。constant メモリが速いのはアクセスが <strong>UNIFORM</strong>
+（全レーンが同じアドレス）のときで、非線形コードブックは<strong>レーンごとに違う index</strong> を読む。
+それは constant が最も苦手なパターンだ。</p>
+</blockquote>
+<p>測定（<code>attn_qkv</code> IQ4_XS 10240×2560、コードブックを Affine に固定してメモリ量と命令数を揃え、
+テーブル読みだけを消した比較）:</p>
+<pre><code>    IQ4NL  0.2032 ms
+    Affine 0.0960 ms      比 2.12x
+</code></pre>
+<p>修正は「shared に 16 バイト置く」。ディバージェントな 16 エントリ読みでも、
+shared なら最大 4-way バンクコンフリクトで済む。</p>
+<pre><code class="language-cpp">template &lt;int CODE_BITS&gt;
+__device__ __forceinline__ float decode_tbl(int code, int bias, int codebook, const signed char* tbl) {
+    if (codebook == (int) Codebook::Iq4Nl) return (float) tbl[code &amp; 0x0F];
+    return (float) (code + bias);   // bias は【コード（整数）】に足す
+}
+</code></pre>
+<blockquote>
+<p><strong>教訓</strong>: 「全員が読むから constant」は間違い。正しい基準は「全員が<strong>同じ</strong>アドレスを読むか」。</p>
+</blockquote>
+<h3>バリアの位置という古典的バグ</h3>
+<p>各カーネルの先頭 3 行は必ずこの形:</p>
+<pre><code class="language-cpp">__shared__ signed char s_iq4nl[16];
+if (threadIdx.x &lt; 16) s_iq4nl[threadIdx.x] = kIq4Nl[threadIdx.x];
+__syncthreads();
+const long long o = ...;
+if (o &gt;= n_out) return;          // ← 早期リターンはバリアの【後】
+</code></pre>
+<p>コメントに「ロードとバリアは早期リターンより<strong>前</strong>に置く。<code>o</code> がスレッド単位のカーネルでは、
+先に return したスレッドが、他のスレッドがまだ待っているバリアに到達しなくなる」とある。
+これは <code>s_gemv_q8_split_kernel</code> で実際に<code>n_out % 8 != 0</code> のとき未定義動作になっていた
+（パックの形が全部 8 の倍数だったので表面化しなかった）。</p>
+<hr>
+<h2>2. 参照実装: <code>s_gemv_kernel</code>（301–340 行）</h2>
+<pre><code class="language-cpp">constexpr int PER_BYTE = 8 / CODE_BITS;          // S2:4, S4:2, S8:1 個/バイト
+const long long n_groups = n_in / group_elems;
+const uint8_t* c   = codes + o * (n_in / PER_BYTE);
+const float*   s   = scales + o * n_groups;
+const float*   off = has_offset ? offset + o * n_groups : nullptr;
+
+for (long long g = 0; g &lt; n_groups; ++g) {
+    const float d = s[g], b = off ? off[g] : 0.0f;
+    for (int j = 0; j &lt; group_elems; ++j) {
+        const long long i = g * group_elems + j;
+        const int code = (c[i / PER_BYTE] &gt;&gt; ((int)(i % PER_BYTE) * CODE_BITS)) &amp; ((1 &lt;&lt; CODE_BITS) - 1);
+        const float w = decode_tbl&lt;CODE_BITS&gt;(code, bias, codebook, s_iq4nl) * d + b;
+        acc += w * __half2float(__ushort_as_half(x[i]));
+    }
+}
+</code></pre>
+<h3>ここで 1 つ、将来 3 時間を溶かす罠が書いてある</h3>
+<blockquote>
+<p>offset は<strong>重み</strong>に属するので、活性と掛ける<strong>前に</strong>復号値へ足す:
+<code>w = code*scale + offset; acc += w * x</code>
+<code>acc += code*scale*x + offset*x</code> と書くと数学的に等しい式だが<strong>丸めが違う</strong>
+（乗算 2 回 + 加算 1 回 vs 乗算 1 回 + 加算 1 回）。
+offset の無い形式では区別できないので、<strong>Q4_K を追加するまで間違ったまま</strong>だった。</p>
+</blockquote>
+<p>これは「テストが通る = 正しい」ではないことの見本。offset を持つ形式（Q4_K/Q5_K）を
+パックに足した瞬間に初めて差が出る。</p>
+<hr>
+<h2>3. 主力: <code>s_gemv_q8_split_kernel</code>（142–299 行）</h2>
+<div class="figrow"><a class="figlink" href="../diagrams/light/png/quant-block.png"><img src="../diagrams/light/png/quant-block.png" alt="02 量子化ブロック — S2 の 20 バイトと decode の内側"><span class="figcap">02 量子化ブロック — S2 の 20 バイトと decode の内側</span></a></div><p>1 warp = 1 出力行、レーンが縮約軸をストライドする。<strong>16 要素 / レーン / イテレーション</strong>。</p>
+<h3>3.1 なぜ「quad（4 要素）」から「オクテット（16 要素）」へ広げたか</h3>
+<p>最初のバージョンは 1 要素ずつ、<code>i = lane, lane+32, ...</code> で読んでいた:
+<strong>要素ごとにコードロード・シフト・スケールロード</strong>。しかし</p>
+<ul>
+<li>4 連続要素は 1 つのコードワードを共有する（S2 なら 1 バイト、S4 なら 2 バイト、S8 なら 4 バイト）</li>
+<li>どの形式でもグループサイズは 4 の倍数なので、quad は 1 グループに収まる</li>
+</ul>
+<p>そこで quad にすると「コード 1 回・スケール 1 回・シフト 1 回」で 4 要素。
+さらに <strong>QE = 16</strong>（4 quad）に拡張し、2 つのコードワードを「消費する前に発行」して
+バイト・イン・フライトを増やす。</p>
+<pre><code class="language-cpp">constexpr int QE = 16;
+constexpr int QW = 4 * CODE_BITS / 8;   // 4 コードワードのバイト数: S2=1, S4=2, S8=4
+constexpr unsigned MASK = (1u &lt;&lt; CODE_BITS) - 1u;
+long long i = (long long) lane * QE;
+for (; i + QE &lt;= n_in; i += 32 * QE) { ... }
+</code></pre>
+<blockquote>
+<p><strong>コメントの自己申告</strong>: 「<code>QW</code> は 4 コードワードあたりのバイト数であって、
+オクテット全体の幅ではない。最初の版はこれを取り違え、S4 で uint32 を読み、S8 で 1 バイトを読んだ。
+<code>s_gemv_q8k_parity</code> がまさにそこで落ちた。<strong>それがこのテストの存在理由</strong>」。</p>
+</blockquote>
+<h3>3.2 除算をシフトにする（1 要素あたり 100 サイクルの削減）</h3>
+<p>グループ添字は本来 <code>e / group_elems</code>。<strong>64bit 整数除算は GPU ではソフトウェアルーチンで約 100 サイクル</strong>。
+これがエンジンで一番熱いループの中で要素ごとに走っていた。</p>
+<pre><code class="language-cpp">const long long g = i &gt;&gt; group_shift;   // group_elems は必ず 2 の冪（16/32/64）
+</code></pre>
+<p>ホスト側は「2 の冪でなければ<strong>静かに間違える</strong>のではなく exit する」:</p>
+<pre><code class="language-cpp">if (form.group_elems &lt;= 0 || (form.group_elems &amp; (form.group_elems - 1)) != 0) {
+    std::fprintf(stderr, &quot;s_gemv_split: group_elems must be a power of two, got %d\n&quot;, form.group_elems);
+    std::exit(1);
+}
+</code></pre>
+<h3>3.3 活性ブロックの巻き上げ — ここが本当の勝ち</h3>
+<p><code>q8k_at(x, i + k)</code> は呼び出しごとに <code>(i+k)/256</code> と <code>(i+k)%256</code> を計算する。
+つまり <strong>要素ごとに 64bit 除算 + 剰余</strong>、1 レーンイテレーションで 16 回。</p>
+<p>しかし <code>QE = 16</code>、ブロックは 256（Q8_K）または 32（Q8_0）、ループの増分は <code>32*QE</code> なので、
+<code>i % 256</code> も <code>i % 32</code> も常に 16 の倍数 → <strong>16 要素は必ず 1 ブロックに収まる</strong>。
+よって除算は 1 回でよい:</p>
+<pre><code class="language-cpp">const int blk_elems = Q8K ? Q8K_BLOCK_ELEMS : Q8_0_BLOCK_ELEMS;
+const uint8_t* xb = x + (i / blk_elems) * (Q8K ? Q8K_BLOCK_BYTES : Q8_0_BLOCK_BYTES);
+const int xi = (int)(i % blk_elems);
+const float xd = Q8K ? __ldg((const float*) xb)
+                     : __half2float(__ushort_as_half(*(const uint16_t*) xb));
+const int8_t* xq = (const int8_t*)(xb + (Q8K ? 4 : 2)) + xi;   // 16 連続 int8 ロード
+</code></pre>
+<blockquote>
+<p>「これは近似ではなく<strong>厳密</strong>。<code>xi + QE &lt;= blk_elems</code> が到達可能な全ての <code>xi</code> で成り立つので、
+レーンイテレーションがブロック境界をまたぐことはない」。
+端数は末尾の 1 回きりのテールループが担当し、そちらは元のアクセサを使う。</p>
+</blockquote>
+<p><strong>この 1 点だけで 16 個の 64bit 除算が消える</strong>。メモリアクセスを減らす話より効くことがある、
+というのがこのカーネルの一番の学び。</p>
+<h3>3.4 16 個のアキュムレータと、順序が変わることの代償</h3>
+<pre><code class="language-cpp">float acc0..acc15;   // 16 本の独立した依存チェーン
+...
+acc0 += w0 * (xd * (float) xq[0]);
+...
+float acc = (((acc0 + acc1) + (acc2 + acc3)) + ((acc4 + acc5) + (acc6 + acc7))) +
+            (((acc8 + acc9) + (acc10 + acc11)) + ((acc12 + acc13) + (acc14 + acc15)));
+for (int step = 16; step &gt; 0; step &gt;&gt;= 1) acc += __shfl_down_sync(0xFFFFFFFFu, acc, step);
+if (lane == 0) y[o] = acc;
+</code></pre>
+<p>理由はコメントに書いてある: 「このカーネルは FP32 ピークの 0.4%、帯域の 2.1% で走っている。
+どちらも律速ではない。律速は<strong>依存チェーン</strong>で、<code>acc += ...</code> が 1 本だと
+FMA のレイテンシ（4–6 サイクル）が直列化し、SM が遊ぶ」。</p>
+<p><strong>代償</strong>: 加算の順序が変わるのでビット一致しない。だから
+<code>s_gemv_parity</code> / <code>s_gemv_q8k_parity</code> は「ナイーブ版との差」を許容誤差つきで比較する。
+「速くする → 順序が変わる → パリティテストで守る」がこのエンジンの定型。</p>
+<h3>3.5 ワープ縮約</h3>
+<p><code>__shfl_down_sync</code> で 31→1 レーンへ。<code>lane == 0</code> だけが書く。
+アトミックを使わないのは<strong>決定性</strong>のため（コメント: 「レースはテストを
+“間違って” ではなく “不安定に” する。それが最悪の失敗の仕方」）。</p>
+<hr>
+<h2>4. <code>s_gemv_split_kernel</code>（400–474 行）— 出力幅が狭いときの救世主</h2>
+<p><code>s_gemv_kernel</code> の並列度は <code>n_out</code>（出力行数）。ところが expert の gate/up は
+<code>[2560 × 640]</code> で、<strong>640 スレッドでは 48 SM を埋められない</strong>。
+コメントに「gate/up [2560x640] は [640x2560] の 4.6 倍遅かった」と実測がある
+（<code>s_gemv</code> は行方向に並列なので、行数が少ないと並列度が落ちる）。</p>
+<p>そこで「<strong>1 ブロック = 1 出力行、<code>threads_per_row</code> 個のスレッドで縮約</strong>」:</p>
+<pre><code class="language-cpp">template &lt;int CODE_BITS&gt;
+__global__ void s_gemv_split_kernel(...) {
+    extern __shared__ float partial[];
+    ...
+    const long long o = blockIdx.x;          // ← ブロックが行に対応
+    const int tid = threadIdx.x;
+    ...
+    constexpr int QE = 4;                    // 1 スレッド 4 要素
+    constexpr int QB = QE * CODE_BITS / 8;
+    float acc0, acc1, acc2, acc3;            // 4 本のチェーン
+    long long i = (long long) tid * QE;
+    for (; i + QE &lt;= n_in; i += (long long) threads_per_row * QE) {
+        ...
+        const float2 f01 = __half22float2(*reinterpret_cast&lt;const __half2*&gt;(x + i));      // 4 half を 8B で
+        const float2 f23 = __half22float2(*reinterpret_cast&lt;const __half2*&gt;(x + i + 2));
+        ...
+    }
+    partial[tid] = (acc0 + acc1) + (acc2 + acc3);
+    __syncthreads();
+    for (int step = threads_per_row / 2; step &gt; 0; step &gt;&gt;= 1) {     // 固定ツリー
+        if (tid &lt; step) partial[tid] += partial[tid + step];
+        __syncthreads();
+    }
+    if (tid == 0) y[o] = partial[0];
+}
+</code></pre>
+<ul>
+<li><strong>固定ツリー縮約、アトミックなし</strong> → 決定性。</li>
+<li><code>TPR = 32</code> が実測の最適（64 にすると 11.75 vs 11.99 tok/s）。
+<code>threads_per_row</code> は 2 の冪 1..1024 を強制。</li>
+<li>4 half を 1 回の 8 バイトロードで読む（<code>i</code> は 4 の倍数なので 8 バイト整列）。</li>
+</ul>
+<blockquote>
+<p><strong>どちらのカーネルを使うか</strong>は呼び出し側（<code>layer.cpp</code>）の判断。
+出力幅が広い（10240 行など）なら <code>s_gemv_split</code> で十分、
+640 行のような狭い行列は <code>s_gemv_split</code>（ブロック/行）でないと埋まらない。</p>
+</blockquote>
+<hr>
+<h2>5. なぜ Q8_0 専用カーネルが「構造的に」必要か（647–692 行）</h2>
+<pre><code class="language-cpp">// THE ACTIVATION IS block_q8_0, 32 elements per block, so n_in must be a multiple of 32 -
+// which is a WEAKER requirement than Q8_K&#39;s 256 and is exactly why this kernel has to exist:
+// ffn_down_shexp has n_in = 640, a multiple of 32 that is NOT a multiple of 256.
+if (n_in % Q8_0_BLOCK_ELEMS != 0) { ... exit(1); }
+</code></pre>
+<p>そして Q8_K 側は 2bit を<strong>明示的に拒否</strong>する:</p>
+<pre><code class="language-cpp">default:
+    // 2-bit S2 never has a Q8_K activation: its vec_dot_type is Q8_0.
+    // Refusing is better than running a kernel that would be numerically wrong in a way
+    // the caller cannot see.
+    std::fprintf(stderr, &quot;s_gemv_q8k: code_bits %d has no Q8_K contract ...&quot;);
+    std::exit(1);
+</code></pre>
+<blockquote>
+<p><strong>設計原則</strong>: 「間違った数値を静かに出す」より「起動時に落ちる」。
+このエンジンは <code>docs/activation-contract.md</code> という 1 枚の表で契約を管理している。</p>
+</blockquote>
+<hr>
+<h2>6. 負けた実装も残す — <code>s2_gemv_fast.cu</code> と <code>#pragma unroll</code></h2>
+<p><code>s2_gemv_fast.cu</code>（153 行）は名前と裏腹に<strong>速くない</strong>。試した 2 つのレバー:</p>
+<ol>
+<li>活性 <code>x</code> を shared にステージする</li>
+<li><code>__constant__ float c_codes[256][4]</code> の LUT（1 バイト→4 コードの展開表）</li>
+</ol>
+<p>両方とも中立〜悪化。しかも<strong>実行ごとのばらつきが約 20%</strong> あって（verify が 6 コアの 97% を
+握っているため）、効果量がノイズ床より小さい。だから「差が無い」と結論できないまま保留になった。</p>
+<p><code>s_gemv_q8_split_kernel</code> 側にも同種の記録がある:</p>
+<pre><code class="language-cpp">// **`#pragma unroll 4` WAS TRIED HERE AND DID NOTHING.**
+// 測定: n_out 10240 で 184.6 → 183.9 GB/s。パリティは両方クリーン。
+// 仮説 L93（行あたり約 6ns はバイト・イン・フライト限界）は棄却されないが、
+// 「命令スケジューリングが律速」は棄却された。
+// Removed rather than kept, because a hint that does not change the timing is a claim that is not true.
+</code></pre>
+<p><strong>「効かなかった最適化は消す」</strong> — これも設計文化。コメントに効果が無いと書いてある
+ヒントは、嘘をついているのと同じだから。</p>
+<hr>
+<h2>7. 数字で見る decode の現実</h2>
+<table>
+<thead>
+<tr>
+<th>指標</th>
+<th>値</th>
+<th>出典</th>
+</tr>
+</thead>
+<tbody><tr>
+<td>S2 GEMV の重み処理レート</td>
+<td>66 G weights/s = 0.55 w/cycle/SM</td>
+<td><code>s2_gemv_quads.cu</code> コメント（L4 測定）</td>
+</tr>
+<tr>
+<td>同カーネルの FP32 ピーク比</td>
+<td>0.4%</td>
+<td>同上（＝計算律速ではない）</td>
+</tr>
+<tr>
+<td>帯域比</td>
+<td>2.1%</td>
+<td>同上（＝帯域でもない）</td>
+</tr>
+<tr>
+<td>行あたり時間</td>
+<td>約 6 ns/出力行</td>
+<td><code>s_gemv.cu</code> の L93 参照</td>
+</tr>
+<tr>
+<td><code>__constant__</code> → shared</td>
+<td>2.12x</td>
+<td><code>s_gemv.cu</code> 19–31 行</td>
+</tr>
+<tr>
+<td>TPR 32 vs 64</td>
+<td>11.99 vs 11.75 tok/s</td>
+<td>ホスト側測定</td>
+</tr>
+</tbody></table>
+<p>計算でも帯域でもないなら何が律速か。候補は「命令発行」か「バイト・イン・フライト」。
+<code>s2_gemv_quads.cu</code> の冒頭はこの 2 つを明示的に区別して実験を設計している
+（13 命令/重み × 4/cycle 上限 = 7.2 命令/cycle 要求、という見積り付き）。</p>
+<hr>
+<h2>8. この章のチェックリスト（読むときの観点）</h2>
+<ol>
+<li><strong>コードワードは何要素を共有するか</strong> → 1 回のロードで何要素処理できるかが決まる</li>
+<li><strong>グループ添字は除算かシフトか</strong> → 熱いループなら 100 サイクル/要素の差</li>
+<li><strong>アキュムレータは何本か</strong> → FMA レイテンシを隠せているか</li>
+<li><strong>バリアは早期リターンより前か</strong> → 未定義動作の定番</li>
+<li><strong>活性のブロック境界をまたがないことは証明できるか</strong> → 除算を巻き上げられるか</li>
+<li><strong>offset は重みに足してから掛けているか</strong> → 丸めが変わる</li>
+<li><strong>その最適化は本当に効いたか</strong> → 効かないなら消す（<code>s2_gemv_fast</code> の教訓）</li>
+</ol>
+<hr>
+<p><em>次: <a href="04_moe.html">04 MoE</a> — router が選んだ 10 個を、GPU と CPU で分担して計算する。</em></p>
+</article><div class="pager"><a href="02_quant.html">← 02. 量子化フォーマット — 13 形式が 3 つの「コード幅」になる</a><span><a href="04_moe.html">04. MoE — 512 個から 10 個を選び、GPU と CPU で分担する →</a></span></div><footer><p>出典: github.com/Niko1221/Strata HEAD 61b3fb5（v0.1.49）／ 本文中の行番号・定数はこのリビジョンのもの。図は同梱 PNG（2 倍解像度）。</p></footer></div></body></html>

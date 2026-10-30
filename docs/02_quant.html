@@ -1,0 +1,245 @@
+<!doctype html><html lang="ja"><head><meta charset="utf-8"><meta name="viewport" content="width=device-width,initial-scale=1"><title>02. 量子化フォーマット — 13 形式が 3 つの「コード幅」になる — STRATA CUDA ソース読解</title><link rel="icon" href="../favicon.svg" type="image/svg+xml"><style>:root{--paper:#fffdf8;--ink:#191510;--muted:#605a4e;--rule:#d6d0c0;--link:#1f4e79;--accent:#9e2b25;--tint:#f5f2e8}
+*{box-sizing:border-box}
+body{background:var(--paper);color:var(--ink);font-family:"Hiragino Mincho ProN","Yu Mincho",YuMincho,Georgia,"Times New Roman",serif;font-size:16.5px;line-height:1.95;margin:0;-webkit-font-smoothing:antialiased}
+.wrap{max-width:760px;margin:0 auto;padding:52px 26px 110px}
+.masthead{font-family:"SF Mono",Menlo,monospace;font-size:11px;letter-spacing:.16em;text-transform:uppercase;color:var(--muted);border-bottom:1px solid var(--rule);padding-bottom:10px;display:flex;justify-content:space-between;gap:14px;margin-bottom:42px}
+.masthead a{color:var(--muted);text-decoration:none;border:0}
+.masthead a:hover{color:var(--link)}
+h1{font-size:30px;line-height:1.45;font-weight:600;margin:0 0 .35em;letter-spacing:.01em}
+h1 small{display:block;font-size:15px;font-weight:400;color:var(--muted);margin-top:.6em;letter-spacing:.02em}
+h2{font-size:18px;font-weight:600;margin:2.6em 0 .8em;padding-bottom:.3em;border-bottom:1px solid var(--rule);letter-spacing:.02em}
+h2 span{font-family:"SF Mono",Menlo,monospace;font-size:11px;color:var(--muted);letter-spacing:.14em;margin-left:.6em;font-weight:400;text-transform:uppercase}
+h3{font-size:16.5px;font-weight:700;margin:2em 0 .5em;letter-spacing:.01em}
+p{margin:.95em 0;text-align:justify}
+a{color:var(--link);text-decoration:none;border-bottom:1px solid rgba(31,78,121,.28)}
+a:hover{border-bottom-color:var(--link)}
+strong{font-weight:700}
+code{font-family:"SF Mono",Menlo,ui-monospace,monospace;font-size:13px;background:var(--tint);padding:.05em .32em;word-break:break-word}
+pre{background:var(--tint);border:1px solid var(--rule);border-left:3px solid #b8b0a0;padding:13px 16px;overflow-x:auto;font-size:12.6px;line-height:1.68;margin:1.5em 0}
+pre code{background:none;padding:0;font-size:12.6px}
+blockquote{margin:1.5em 0;padding:.15em 0 .15em 1.1em;border-left:2px solid #c3bba9;color:#3b382f;text-align:left}
+blockquote p{margin:.4em 0}
+table{border-collapse:collapse;width:100%;margin:1.6em 0;font-size:13.8px;font-variant-numeric:tabular-nums;display:block;overflow-x:auto}
+th,td{border:0;border-bottom:1px solid #e4dfd1;padding:7px 12px 7px 0;text-align:left;vertical-align:top}
+thead th{border-bottom:1.4px solid var(--ink);font-weight:700;white-space:nowrap;background:none}
+ul,ol{padding-left:1.5em;margin:.9em 0}
+li{margin:.32em 0}
+hr{border:0;border-top:1px solid var(--rule);margin:2.4em 0}
+.figrow{display:block;margin:2em -82px}
+.figlink{display:block;border:0;margin:0 0 1.3em}
+.figlink:last-child{margin-bottom:0}
+.figlink img{width:100%;display:block;border:1px solid var(--rule)}
+.figcap{display:block;font-size:12.6px;color:var(--muted);margin-top:.55em;text-align:center;font-family:"SF Mono",Menlo,monospace;letter-spacing:.02em}
+.abstract{font-size:15.5px;color:#2c2a24;margin:1.5em 0 2.2em}
+.meta{width:100%;border-collapse:collapse;font-size:13.4px;margin:0 0 2.8em;font-family:"SF Mono",Menlo,monospace;display:table}
+.meta th{text-align:left;font-weight:400;color:var(--muted);width:9em;border-top:1px solid var(--rule);padding:7px 10px 7px 0;vertical-align:top;letter-spacing:.04em}
+.meta td{border-top:1px solid var(--rule);padding:7px 0;vertical-align:top}
+.toc{list-style:none;padding:0;margin:1.2em 0}
+.toc li{border-top:1px solid #e8e3d5;padding:.9em 0}
+.toc li:last-child{border-bottom:1px solid #e8e3d5}
+.toc .n{font-family:"SF Mono",Menlo,monospace;font-size:11.5px;color:var(--muted);letter-spacing:.12em}
+.toc .row{display:block;border:0;color:inherit;padding:0}
+.toc .row:hover .t{color:var(--link);border-bottom:1px solid rgba(31,78,121,.3)}
+.toc .t{display:inline-block;font-size:16.5px;margin:.1em 0 .18em;border-bottom:1px solid transparent}
+.toc .d{display:block;font-size:14px;color:var(--muted);line-height:1.7}
+.toc .s{font-family:"SF Mono",Menlo,monospace;font-size:11px;color:#8b8677;letter-spacing:.06em}
+.gallery{display:grid;grid-template-columns:1fr 1fr;gap:24px;margin:1.6em 0}
+.gallery a{display:block;border:0;color:inherit}
+.gallery img{width:100%;display:block;border:1px solid var(--rule)}
+.gallery .cap{font-size:12.6px;margin-top:.55em;font-family:"SF Mono",Menlo,monospace;color:var(--ink)}
+.gallery .cd{font-size:12.4px;color:var(--muted);line-height:1.65;margin-top:.2em}
+footer{margin-top:4em;padding-top:1.2em;border-top:1px solid var(--rule);font-size:13.4px;color:var(--muted)}
+footer p{margin:.6em 0}
+.pager{display:flex;justify-content:space-between;gap:16px;font-size:13.4px;margin-top:3.2em;padding-top:1.1em;border-top:1px solid var(--rule);color:var(--muted)}
+@media(max-width:1100px){.figrow{margin:1.8em 0}}
+@media(max-width:640px){body{font-size:16px}.wrap{padding:32px 18px 80px}h1{font-size:23px}.gallery{grid-template-columns:1fr}}
+@media print{body{background:#fff;font-size:11pt}.masthead,.pager{display:none}a{color:#000;border:0}pre,table,.figlink{page-break-inside:avoid}}
+</style></head><body><div class="wrap"><div class="masthead"><a href="../index.html">← 目次 / 図一覧</a><span>STRATA 読解 · 02 / 08</span></div><article><h1>02. 量子化フォーマット — 13 形式が 3 つの「コード幅」になる</h1>
+<div class="figrow"><a class="figlink" href="../diagrams/light/png/quant-block.png"><img src="../diagrams/light/png/quant-block.png" alt="02 量子化ブロック — S2 の 20 バイトと decode / prefill の内側"><span class="figcap">02 量子化ブロック — S2 の 20 バイトと decode / prefill の内側</span></a></div><h2>1. なぜ「S2/S4/S8」なのか</h2>
+<p>Qwen3.8-Flash-Next のパックには、量子化形式が <strong>13 種類</strong>混在している。
+層ごとに、テンソルごとに違う（例: <code>attn_qkv</code> は IQ4_XS が 13 層、Q3_K が 18 層、Q2_0 が 1 層、Q4_K が 4 層）。</p>
+<p>これをカーネル側で 13 分岐すると、内側ループに switch が入る。Strata の答えは
+<strong>「コード幅（1 要素あたりのビット数）だけをコンパイル時定数にし、残りは実行時引数にする」</strong>。</p>
+<pre><code class="language-cpp">// include/strata/kernels/s_gemv.hpp
+struct SForm {
+    int   code_bits;     // 2 / 4 / 8   ← これだけテンプレート引数
+    int   code_bias;     // 整数域で足すバイアス（Q2_0 は -1）
+    int   group_elems;   // スケール 1 個が受け持つ要素数（16 / 32 / 64）
+    Codebook codebook;   // Affine | Iq4Nl
+    bool  has_offset;    // Q4_K / Q5_K の min プレーン
+    int   act_kind;      // 0 = Q8_0, 1 = Q8_K  ← 形式から導出できない
+};
+</code></pre>
+<p>3 幅 × コードブック 2 種 × offset 有無 = 実質 12 通りだが、カーネルは
+<code>template &lt;int CODE_BITS&gt;</code> の 3 実体で済む。残りはカーネル引数。</p>
+<p><strong><code>act_kind</code> だけは導出できない</strong>のが罠。<code>Q5_0</code> と <code>Q5_K</code> はコード幅が同じでも
+活性の要求が違い、<code>IQ4_NL</code> と <code>IQ4_XS</code> も同様。だから manifest が明示する。</p>
+<hr>
+<h2>2. S2（= Q2_0 の正規形）のビット配置</h2>
+<p><strong>全 38 GiB のうち 31.64 GiB が S2</strong>。したがって S2 のカーネルが勝敗を決める。</p>
+<pre><code> 1 グループ = 64 要素
+ ┌───────────────────────────────┬──────────────┐
+ │ codes: 64 × 2bit = 16 バイト  │ scale: FP32  │
+ └───────────────────────────────┴──────────────┘
+   バイト i に 要素 4i, 4i+1, 4i+2, 4i+3 が入る（LSB ファースト）
+   bit 位置:  要素 4i+k は ビット [2k, 2k+2)
+
+   復号:  w = (code + bias) * scale      bias = -1 は【整数域で】足す
+</code></pre>
+<p>「bias を整数域で足す」が重要。<code>(float)code * scale - scale</code> と書くと丸めが 1 回増える。
+<code>docs/pack-format.md</code> §3.1 に、この点が「正規形（canonical form）」として定義されている。</p>
+<h3>テンソルの格納順</h3>
+<p>GGUF 順 <code>[n_in, n_out]</code>、<strong>n_in が連続</strong>。つまり出力行 <code>o</code> は
+<code>n_in / group_elems</code> グループの連続した並びで、行の先頭は必ずグループ境界。
+だからカーネルは「行ポインタ + グループ走査」だけで済む（転置不要）。</p>
+<hr>
+<h2>3. 活性の量子化 — Q8_0 / Q8_1 / Q8_K</h2>
+<p>ggml の GEMV は「重み × 活性」を整数ドット積でやるために、<strong>活性を重みの <code>vec_dot_type</code> に
+変換してから</strong>掛ける（<code>ref/quant.py</code> の <code>apply_src1</code>）。Strata も同じ規則に従う。</p>
+<table>
+<thead>
+<tr>
+<th>形式</th>
+<th>ブロック</th>
+<th>中身</th>
+<th>使う場所</th>
+</tr>
+</thead>
+<tbody><tr>
+<td>Q8_0</td>
+<td>32 要素 / <strong>34 B</strong></td>
+<td>fp16 d + int8 qs[32]</td>
+<td>レガシー形式（Q4_0/Q5_0/IQ4_NL…）の <code>vec_dot_type</code></td>
+</tr>
+<tr>
+<td>Q8_1</td>
+<td>32 要素 / <strong>36 B</strong></td>
+<td>fp16 d + fp16 s + int8 qs[32]</td>
+<td>llama.cpp MMVQ 系（<code>native_mmvq</code>）</td>
+</tr>
+<tr>
+<td>Q8_K</td>
+<td>256 要素 / <strong>292 B</strong></td>
+<td>f32 d + int8 qs[256] + int16 bsums[16]</td>
+<td>K-quant / IQ4_XS</td>
+</tr>
+</tbody></table>
+<p><code>bsums</code> は Strata では読まない（ggml の AVX2 用）が、<strong>ストライドに含まれる</strong>ので
+<code>quantize_q8_K</code> の出力をそのまま渡せる。</p>
+<h3>構造的な制約</h3>
+<p><code>ffn_down_shexp</code> は <strong>n_in = 640</strong>。256 の倍数ではないので <strong>Q8_K は物理的に不可能</strong>。
+だからこのテンソル専用に <code>s_gemv_q8_0_split</code> がある（第 3 章）。
+「Q8_K が未実装」ではなく「この形では実装できない」のが正しい理解。</p>
+<h3>罠: d32 の丸め</h3>
+<p><code>quantize_act.cu</code> の冒頭:</p>
+<blockquote>
+<p><code>d32 = amax / 127.0f</code> は <strong>FP32</strong> で計算し、量子化後の整数は <strong>d32 で割る</strong>。
+保存される fp16 丸め値で割ると、ggml のバイト列と <strong>80 ブロック中 18 ブロック</strong>が食い違った。
+しかも Q2_0 expert は Q8_0 に変換されるので、誤差は 48 個の MoE ブロック全部に乗り、
+<strong>end-to-end の KL を悪化させた</strong>。</p>
+</blockquote>
+<p>「保存する値」と「計算に使う値」を混同すると、目に見えない形でモデル全体が劣化する典型例。</p>
+<hr>
+<h2>4. i-quant のブロックサイズ</h2>
+<p><code>moe_fused_iq.cu</code> が扱う形式（<code>static_assert</code> でサイズを固定）:</p>
+<table>
+<thead>
+<tr>
+<th>形式</th>
+<th>ブロックバイト</th>
+<th>備考</th>
+</tr>
+</thead>
+<tbody><tr>
+<td>IQ2_XXS</td>
+<td>66</td>
+<td>コードブック + 符号ビット、8 要素単位のスケール</td>
+</tr>
+<tr>
+<td>IQ2_XS</td>
+<td>74</td>
+<td></td>
+</tr>
+<tr>
+<td>IQ2_S</td>
+<td>82</td>
+<td></td>
+</tr>
+<tr>
+<td>IQ3_XXS</td>
+<td>98</td>
+<td></td>
+</tr>
+<tr>
+<td>IQ3_S</td>
+<td>110</td>
+<td></td>
+</tr>
+<tr>
+<td>IQ4_XS</td>
+<td>136</td>
+<td>32 要素ごとに scale</td>
+</tr>
+<tr>
+<td>Q2_0</td>
+<td>18</td>
+<td>codes 16B + fp16 d</td>
+</tr>
+</tbody></table>
+<p>※ 2 バイト境界に整列しているので 16bit ロードで読める、という前提が
+<code>moe_fused_iq.cu</code> のロード段の設計に効いている。</p>
+<hr>
+<h2>5. 整数ドット積を float にする「魔法の float」</h2>
+<p><code>moe_fused.cu</code>（prefill の Q2_0 経路）の核心。int8 テンソルコアは int32 を返すので、
+これを float に変換すると 1 命令（I2F, 高コスト）かかる。Strata はこれを消す:</p>
+<pre><code class="language-cpp">// 1.5 * 2^23 = 0x4B400000。この仮数部に int をそのまま足すと、
+// 指数部が変わらない範囲（|dot| &lt; 2^22）で float の値が 1.5*2^23 + dot になる
+as_float(0x4B400000 + dot) - 1.5f*2^23  ==  (float)dot   // 丸めなし・I2F なし
+</code></pre>
+<p>Q2_0 の場合、重みは <code>w = d_w*(q-1)</code>、活性は <code>x = d_x*a</code> なので</p>
+<pre><code>Σ w x = d_w * d_x * (Σ q a - Σ a)
+</code></pre>
+<p><code>Σa</code> は活性ブロックに保存済み（<code>c = -(1.5*2^23 + Σa)</code>）。したがって</p>
+<pre><code class="language-cpp">acc += d_w * (d_x0 * t0 + d_x1 * t1);   // t = dot - Σa, 整数 2 回 + float 3 回
+</code></pre>
+<p>で 1 ブロック分が終わる。<strong>変換命令ゼロ</strong>。この発想は <code>moe_fused_iq.cu</code> にも展開されていて、
+そちらは <code>MAGICF</code> という名前で同じトリックを使う。</p>
+<hr>
+<h2>6. まとめ表: どこで何が量子化されるか</h2>
+<table>
+<thead>
+<tr>
+<th>段階</th>
+<th>形式</th>
+<th>実装</th>
+</tr>
+</thead>
+<tbody><tr>
+<td>パック（オフライン）</td>
+<td>S2/S4/S8, IQ 系, K-quant</td>
+<td><code>docs/pack-format.md</code></td>
+</tr>
+<tr>
+<td>活性（decode）</td>
+<td>Q8_0 / Q8_K / Q8_1</td>
+<td><code>quantize_act.cu</code>, <code>native_mmvq.cu</code></td>
+</tr>
+<tr>
+<td>重み読み出し（decode）</td>
+<td>そのまま（復号しながら掛ける）</td>
+<td><code>s_gemv.cu</code>, <code>iq_kernels.cu</code></td>
+</tr>
+<tr>
+<td>重み（prefill）</td>
+<td>int8 に展開してテンソルコアへ</td>
+<td><code>moe_fused.cu</code>, <code>moe_fused_iq.cu</code></td>
+</tr>
+<tr>
+<td>KV</td>
+<td>f16 → q8 → q4（Hadamard 回転）</td>
+<td><code>kv_q8.cu</code>, <code>kv_q4.cu</code>, <code>cvec.cu</code></td>
+</tr>
+</tbody></table>
+<hr>
+<p><em>次: <a href="03_decode_gemv.html">03 Decode GEMV</a> — 31.64 GiB を読むカーネルの全注釈。</em></p>
+</article><div class="pager"><a href="01_memory.html">← 01. メモリ階層 — SSD から SMEM まで</a><span><a href="03_decode_gemv.html">03. Decode GEMV — 31.64 GiB を 1 トークンで読む →</a></span></div><footer><p>出典: github.com/Niko1221/Strata HEAD 61b3fb5（v0.1.49）／ 本文中の行番号・定数はこのリビジョンのもの。図は同梱 PNG（2 倍解像度）。</p></footer></div></body></html>

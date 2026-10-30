@@ -1,0 +1,381 @@
+<!doctype html><html lang="ja"><head><meta charset="utf-8"><meta name="viewport" content="width=device-width,initial-scale=1"><title>04. MoE — 512 個から 10 個を選び、GPU と CPU で分担する — STRATA CUDA ソース読解</title><link rel="icon" href="../favicon.svg" type="image/svg+xml"><style>:root{--paper:#fffdf8;--ink:#191510;--muted:#605a4e;--rule:#d6d0c0;--link:#1f4e79;--accent:#9e2b25;--tint:#f5f2e8}
+*{box-sizing:border-box}
+body{background:var(--paper);color:var(--ink);font-family:"Hiragino Mincho ProN","Yu Mincho",YuMincho,Georgia,"Times New Roman",serif;font-size:16.5px;line-height:1.95;margin:0;-webkit-font-smoothing:antialiased}
+.wrap{max-width:760px;margin:0 auto;padding:52px 26px 110px}
+.masthead{font-family:"SF Mono",Menlo,monospace;font-size:11px;letter-spacing:.16em;text-transform:uppercase;color:var(--muted);border-bottom:1px solid var(--rule);padding-bottom:10px;display:flex;justify-content:space-between;gap:14px;margin-bottom:42px}
+.masthead a{color:var(--muted);text-decoration:none;border:0}
+.masthead a:hover{color:var(--link)}
+h1{font-size:30px;line-height:1.45;font-weight:600;margin:0 0 .35em;letter-spacing:.01em}
+h1 small{display:block;font-size:15px;font-weight:400;color:var(--muted);margin-top:.6em;letter-spacing:.02em}
+h2{font-size:18px;font-weight:600;margin:2.6em 0 .8em;padding-bottom:.3em;border-bottom:1px solid var(--rule);letter-spacing:.02em}
+h2 span{font-family:"SF Mono",Menlo,monospace;font-size:11px;color:var(--muted);letter-spacing:.14em;margin-left:.6em;font-weight:400;text-transform:uppercase}
+h3{font-size:16.5px;font-weight:700;margin:2em 0 .5em;letter-spacing:.01em}
+p{margin:.95em 0;text-align:justify}
+a{color:var(--link);text-decoration:none;border-bottom:1px solid rgba(31,78,121,.28)}
+a:hover{border-bottom-color:var(--link)}
+strong{font-weight:700}
+code{font-family:"SF Mono",Menlo,ui-monospace,monospace;font-size:13px;background:var(--tint);padding:.05em .32em;word-break:break-word}
+pre{background:var(--tint);border:1px solid var(--rule);border-left:3px solid #b8b0a0;padding:13px 16px;overflow-x:auto;font-size:12.6px;line-height:1.68;margin:1.5em 0}
+pre code{background:none;padding:0;font-size:12.6px}
+blockquote{margin:1.5em 0;padding:.15em 0 .15em 1.1em;border-left:2px solid #c3bba9;color:#3b382f;text-align:left}
+blockquote p{margin:.4em 0}
+table{border-collapse:collapse;width:100%;margin:1.6em 0;font-size:13.8px;font-variant-numeric:tabular-nums;display:block;overflow-x:auto}
+th,td{border:0;border-bottom:1px solid #e4dfd1;padding:7px 12px 7px 0;text-align:left;vertical-align:top}
+thead th{border-bottom:1.4px solid var(--ink);font-weight:700;white-space:nowrap;background:none}
+ul,ol{padding-left:1.5em;margin:.9em 0}
+li{margin:.32em 0}
+hr{border:0;border-top:1px solid var(--rule);margin:2.4em 0}
+.figrow{display:block;margin:2em -82px}
+.figlink{display:block;border:0;margin:0 0 1.3em}
+.figlink:last-child{margin-bottom:0}
+.figlink img{width:100%;display:block;border:1px solid var(--rule)}
+.figcap{display:block;font-size:12.6px;color:var(--muted);margin-top:.55em;text-align:center;font-family:"SF Mono",Menlo,monospace;letter-spacing:.02em}
+.abstract{font-size:15.5px;color:#2c2a24;margin:1.5em 0 2.2em}
+.meta{width:100%;border-collapse:collapse;font-size:13.4px;margin:0 0 2.8em;font-family:"SF Mono",Menlo,monospace;display:table}
+.meta th{text-align:left;font-weight:400;color:var(--muted);width:9em;border-top:1px solid var(--rule);padding:7px 10px 7px 0;vertical-align:top;letter-spacing:.04em}
+.meta td{border-top:1px solid var(--rule);padding:7px 0;vertical-align:top}
+.toc{list-style:none;padding:0;margin:1.2em 0}
+.toc li{border-top:1px solid #e8e3d5;padding:.9em 0}
+.toc li:last-child{border-bottom:1px solid #e8e3d5}
+.toc .n{font-family:"SF Mono",Menlo,monospace;font-size:11.5px;color:var(--muted);letter-spacing:.12em}
+.toc .row{display:block;border:0;color:inherit;padding:0}
+.toc .row:hover .t{color:var(--link);border-bottom:1px solid rgba(31,78,121,.3)}
+.toc .t{display:inline-block;font-size:16.5px;margin:.1em 0 .18em;border-bottom:1px solid transparent}
+.toc .d{display:block;font-size:14px;color:var(--muted);line-height:1.7}
+.toc .s{font-family:"SF Mono",Menlo,monospace;font-size:11px;color:#8b8677;letter-spacing:.06em}
+.gallery{display:grid;grid-template-columns:1fr 1fr;gap:24px;margin:1.6em 0}
+.gallery a{display:block;border:0;color:inherit}
+.gallery img{width:100%;display:block;border:1px solid var(--rule)}
+.gallery .cap{font-size:12.6px;margin-top:.55em;font-family:"SF Mono",Menlo,monospace;color:var(--ink)}
+.gallery .cd{font-size:12.4px;color:var(--muted);line-height:1.65;margin-top:.2em}
+footer{margin-top:4em;padding-top:1.2em;border-top:1px solid var(--rule);font-size:13.4px;color:var(--muted)}
+footer p{margin:.6em 0}
+.pager{display:flex;justify-content:space-between;gap:16px;font-size:13.4px;margin-top:3.2em;padding-top:1.1em;border-top:1px solid var(--rule);color:var(--muted)}
+@media(max-width:1100px){.figrow{margin:1.8em 0}}
+@media(max-width:640px){body{font-size:16px}.wrap{padding:32px 18px 80px}h1{font-size:23px}.gallery{grid-template-columns:1fr}}
+@media print{body{background:#fff;font-size:11pt}.masthead,.pager{display:none}a{color:#000;border:0}pre,table,.figlink{page-break-inside:avoid}}
+</style></head><body><div class="wrap"><div class="masthead"><a href="../index.html">← 目次 / 図一覧</a><span>STRATA 読解 · 04 / 08</span></div><article><h1>04. MoE — 512 個から 10 個を選び、GPU と CPU で分担する</h1>
+<blockquote>
+<p>対象: <code>src/kernels/cuda/router_top10.cu</code>（497）、<code>s2_expert_grouped.cu</code>（1236）、
+<code>shared_expert.cu</code>（419）、<code>native_moe.cu</code>（170）、<code>native_router.cu</code>（232）</p>
+</blockquote>
+<div class="figrow"><a class="figlink" href="../diagrams/light/png/expert-flow.png"><img src="../diagrams/light/png/expert-flow.png" alt="04 expert の流れ — router → 3 つの行き先 → combine"><span class="figcap">04 expert の流れ — router → 3 つの行き先 → combine</span></a><a class="figlink" href="../diagrams/light/png/streams-doorbell.png"><img src="../diagrams/light/png/streams-doorbell.png" alt="01 ストリームと doorbell — GPU と CPU を重ねる"><span class="figcap">01 ストリームと doorbell — GPU と CPU を重ねる</span></a></div><h2>0. 形の確認</h2>
+<p>Qwen3.8-Flash-Next 125B は <strong>48 層 × 512 expert = 24,576 expert</strong>。1 トークン・1 層あたり
+<strong>top-10</strong> を選ぶ。1 トークンの decode で動く expert は 480 個、重みにして数十 GB。
+だからこそ「全部 RAM に置き、VRAM にはホットな約 700 expert/GiB だけ」という設計になる（<a href="01_memory.html">01</a>）。</p>
+<p>1 層の MoE ブロックは 3 段階に分かれている（<code>include/strata/core/layer.hpp</code> の分割グラフ）:</p>
+<pre><code>block_layer_pre[l]  ──  attn → mixer → gr_write → ffn gr_read → moe_route
+                                                        │
+                                                        │  ring the doorbell（共有メモリの序列番号）
+                                                        ▼
+                        ┌────────────── GPU ──────────────┐   ┌──── host（CPU pool）────┐
+                        │ shared expert（既定 shared-early） │   │ VRAM に居ない expert を    │
+                        │ VRAM resident expert の計算        │   │ AVX-512 で計算（並行）     │
+                        └──────────────┬──────────────────┘   └───────────┬────────────┘
+                                       ▼                                  ▼
+block_layer_post[l] ── moe_finish（重み付き合成 + shared 加算）→ gr_write
+</code></pre>
+<p><strong>doorbell</strong> がこのエンジンの心臓部。graph capture 中は <code>cudaEventRecord</code> が黙って落ちるので（round 199）、
+カーネルが「マップ済みピンドメモリにシーケンス番号を書く」ことでホストへ合図する。</p>
+<hr>
+<h2>1. Router — 289ms のトークンの 56% を食っていた場所</h2>
+<h3>1.1 仕様は <code>ref/moe.py::router</code> の写し</h3>
+<pre><code class="language-python">p   = softmax(logits)              # 全 expert 上で。選ばれた 10 個の上ではない
+ids = stable argsort(-p)[:k]       # 同値は index 昇順
+w   = gather(p, ids)
+s   = max(sum(w), 2**-14)          # ggml_clamp(..., 2**-14, INF)
+return ids, w / s
+</code></pre>
+<p>ソースのコメントが「<strong>2 段構造は見た目の問題ではない</strong>」と強調している:
+選ばれた部分集合の上で softmax を取っても数学的には同じ（softmax はシフト不変）だが、
+<strong>再正規化の位置が動き、CLAMP は再正規化の一部</strong>なので、gather 形式を再現しないと clamp が別の場所に落ちる。</p>
+<h3>1.2 「演算量が少ないから高速」という誤り</h3>
+<p>初版は <strong>1 スレッド = 1 トークン</strong>で、k 回のパスごとに全 expert の <code>exp</code> を再計算していた。
+コメントの正当化はこうだった:</p>
+<blockquote>
+<p>「トークンあたり 5,120 演算。expert matvec の 2.36e9 重みに比べて 3 桁小さいので、
+最も単純な正しい版が十分速い」</p>
+</blockquote>
+<blockquote>
+<p><strong>それは演算量についての主張で、時間については何も言っていない。5,120 演算がすべて 1 スレッドの上に
+あったのに対し、matvec は数千スレッドで走っていた。</strong></p>
+</blockquote>
+<p>実測（round 218、1 ブロック内を段階計測）:</p>
+<pre><code>  moe_layer    4.077 ms
+  router_top10 3.387 ms      ← 2.6 MB しか読まないカーネル
+  bf16 gemv    0.270 ms
+</code></pre>
+<p><strong>3.39 ms × 48 層 = 163 ms。289 ms のトークンの 56%。</strong>
+しかも <code>router_top10_parity</code> は 1 回呼んで id を確認するだけなので、これを見逃していた。</p>
+<h3>1.3 何を並列化し、何を意図的に直列に残したか</h3>
+<table>
+<thead>
+<tr>
+<th>部分</th>
+<th>判断</th>
+<th>理由</th>
+</tr>
+</thead>
+<tbody><tr>
+<td>max</td>
+<td>ツリー <code>fmaxf</code></td>
+<td>厳密・順序非依存 → 直列走査とビット一致</td>
+</tr>
+<tr>
+<td>512 個の <code>exp</code></td>
+<td><strong>並列、1 回だけ</strong></td>
+<td>旧版は 11 回計算していた。3.4 ms の正体はここ</td>
+</tr>
+<tr>
+<td>512 個の double 加算</td>
+<td><strong>1 スレッド、昇順のまま</strong></td>
+<td>約 1 µs。順序を変えると最下位ビットが変わる。コストは exp であってここではない</td>
+</tr>
+<tr>
+<td>選択</td>
+<td><strong>k パス</strong>（後述）</td>
+<td>O(n²) → 51 倍の仕事削減</td>
+</tr>
+</tbody></table>
+<pre><code class="language-cpp">// the sum, ascending, on one thread: this is NOT parallelised
+if (tid == 0) {
+    double sum = 0.0;
+    for (int e = 0; e &lt; n_expert; ++e) sum += s_ex[e];
+    s_sum = sum;
+}
+</code></pre>
+<p><strong>「無料の高速化は、値の静かな変更でもある」</strong> — これが並列化しない理由として明記されている。</p>
+<h3>1.4 選択アルゴリズムの 2 段進化</h3>
+<p><strong>第 1 版: rank by counting</strong></p>
+<pre><code class="language-cpp">rank(e) = #{ f : p[f] &gt; p[e] } + #{ f &lt; e : p[f] == p[e] }
+</code></pre>
+<p>「安定降順ソート、同値は index 昇順」と等価で、k 回の直列 max を 1 パスにする。だが
+<strong>O(n²) = 512×512 = 262,144 回の shared ロードと比較</strong>、実測 34.35 µs で <code>moe_route</code> の 63%。</p>
+<blockquote>
+<p>「コメントは既に FP64 演算をループの外へ出したと記録している（262,144 回の double 乗算 → 512 回）。
+<strong>だが O(n²) という“構造”は残っていた。コストなのは構造のほうだ。</strong>」</p>
+</blockquote>
+<p><strong>第 2 版: k パス（現行）</strong></p>
+<pre><code class="language-cpp">for (int i = 0; i &lt; k; ++i) {
+    float bv = -INFINITY;
+    int bi = n_expert;                 // すべての実 index に負ける番兵
+    for (int e = tid; e &lt; n_expert; e += nt) {
+        if (s_taken[e]) continue;
+        const float pe = s_p[e];
+        if (pe &gt; bv) { bv = pe; bi = e; }    // 厳密な &gt; が同値時に最小 index を残す
+    }
+    ... // ワープ/ブロック縮約、これも (ov &gt; bv || (ov == bv &amp;&amp; oi &lt; bi))
+    if (tid == 0 &amp;&amp; ix &lt; n_expert) { ids[...] = ix; weights[...] = v; s_taken[ix] = 1; }
+}
+</code></pre>
+<p><code>k × 512 = 5,120 比較</code>、<strong>51 倍少ない</strong>、そして<strong>同じ順序</strong>。
+正しさの議論は「<code>e</code> を昇順に走査し厳密な <code>&gt;</code> を使えば、同値のとき最小 index が残る。
+これは rank ループが <code>else if (f &lt; e &amp;&amp; pf == pe) ++rank</code> と書いていた規則そのもの」。</p>
+<p>さらに <code>p[e]</code> の <strong>262,144 回の double 乗算</strong>も 512 回に巻き上げられた:</p>
+<pre><code class="language-cpp">float* s_p = (float*) (s_ex + n_expert);
+for (int e = tid; e &lt; n_expert; e += nt) s_p[e] = (float) (s_ex[e] * inv);
+</code></pre>
+<p>「<strong>ビット一致であって、単に等価なのではない</strong>: <code>p[e]</code> は同じ式を 513 回ではなく 1 回計算しただけ。」</p>
+<h3>1.5 AMD 版の話（設計の参考になる）</h3>
+<p><code>router_top10_fast_kernel</code> は RDNA4 向けで、<strong>直列部分を消してビット一致を保つ</strong>技巧が詰まっている:</p>
+<ul>
+<li>昇順 double 和の唯一の用途は <code>inv = (float)(1.0/sum)</code>。全項が正で最大値は厳密に 1 なので、
+直列和と任意の順序の和は 2⁻⁴³ 相対以内。<strong>1.0/x と float キャストは単調</strong>だから、
+区間 <code>[tree(1-2⁻⁴⁰), tree(1+2⁻⁴⁰)]</code> が 1 つの float に写るなら、それは直列和の float と同一。
+写らないとき（パリティテストで 1000 行に 1 行程度）だけ thread 0 が直列和を走らせる。</li>
+<li>選択は wave 0 だけで、確率をレジスタに保持（1 レーン 16 個）。「最大 p かつ同値なら最小 index」は
+一意なので butterfly でも同じ expert が見つかる。</li>
+</ul>
+<blockquote>
+<p><strong>一般則</strong>: 浮動小数の並列化は「一致しない」ではなく「<strong>一致することを証明できるか</strong>」で判断する。
+証明できない部分だけ直列に残す。</p>
+</blockquote>
+<hr>
+<h2>2. Expert の計算 — 整数で dot して、float は 32 要素に 1 回</h2>
+<h3>2.1 S2 の代数変形がすべてを決める</h3>
+<p>expert の重みは S2（Q2_0）。復号は <code>w = (code + bias) * d_w</code>。素直に書けば要素ごとに
+「整数 → float 変換 → 乗算」だが、<code>s2_expert_grouped.cu</code> はまず<strong>式を変形する</strong>:</p>
+<pre><code>sum_j (c_j - 1) * d_w * x̂_j * d_x   ==   d_w * d_x * ( sum_j c_j·x̂_j  -  sum_j x̂_j )
+</code></pre>
+<blockquote>
+<p>両方の和は <strong>INT8 × INT8</strong> なので、どちらも <code>__dp4a</code>（1 命令 4 積和）。
+整数で厳密、ループの中に非量子化が一切ない。</p>
+</blockquote>
+<p>そしてスケールの粒度が違う: 重み <code>d_w</code> は <strong>fp16、64 要素に 1 個</strong>、
+活性 <code>d_x</code> は <strong>fp16、32 要素に 1 個</strong>。だから float の仕事は
+「<strong>32 要素のチャンクあたり 1 回の乗算 + 1 回の加算</strong>」になる。要素あたりではない。</p>
+<blockquote>
+<p><strong>ソースの自己申告</strong>: 「和の順序は CPU のものではなく、<strong>そうする事はできない</strong>。
+レーン L はチャンク L, L+32, … を取り、部分和は shuffle で縮約される。CPU は全チャンクを
+順番に自分のアキュムレータ形状で歩く。両者は float の丸めで一致し、ビットでは一致しない —
+<code>s_gemv_parity</code> が同じ理由で背負っているのと同じ契約。<code>bench/micro/moe_hit_parity.cu</code> が検査する。」</p>
+</blockquote>
+<h3>2.2 「チャンク内でどのコードがどの活性と組になるかは自由」</h3>
+<blockquote>
+<p><code>s = sum_e code_e * x_e</code> と <code>hx = sum_e x_e</code> は<strong>厳密な整数和</strong>（|s| ≤ 32·3·128）なので、
+32 個の積をどう 4 個ずつのワードにまとめても、同じ 2 つの整数になる。
+ここで使うまとめ方はコードの転置を<strong>コスト 0</strong> で済ませる:
+<code>(w &gt;&gt; 2f) &amp; 0x03030303</code> はコードワードの 4 バイトそれぞれのフィールド f
+（＝要素 <code>4b + f</code>、2 ワード目なら +16）を保持する。
+つまり<strong>組み替えるのは活性のほう</strong>で、チャンクごとに 1 回:</p>
+</blockquote>
+<pre><code>X[4h + f] = { x[16h + f], x[16h + 4 + f], x[16h + 8 + f], x[16h + 12 + f] }
+</code></pre>
+<blockquote>
+<p>これはチャンクの各半分の 4×4 バイト転置で、<strong>8 個の <code>__byte_perm</code></strong>。
+旧カーネルはコード<strong>バイト</strong>あたり 7 個の整数演算と、行ごとに <code>hx</code> 用の 2 本目の dp4a チェーンを
+使っていた。ここではコードワードが 16 要素あたり 7 個で、<code>hx</code> はチャンクあたり 1 回だけ和を取る。</p>
+</blockquote>
+<p><strong>結果はビット一致</strong>（<code>s</code>、<code>hx</code>、<code>dw * dx * (float)(s - hx)</code> は不変）。
+「速くする = 値が変わる」ではないことの見本。</p>
+<h3>2.3 アラインメントからロードを減らす</h3>
+<blockquote>
+<p><strong>32 回のバイトロードではなく、9 回の整列ワードロード。</strong>
+呼び出し側が活性行の 4 バイト整列を保証するので、チャンク c の int8 は <code>34c + 2</code> から始まる
+＝整列ワードの 0 バイト目（c 奇数）か 2 バイト目（c 偶数）。ワードは整列して読み、
+funnel shift で位置を合わせる。9 個目のワードは 2 バイト目の場合だけ読み、しかもそれは
+同じ行のブロック c+1 の内側にある — 両方の行長（80 と 20 チャンク）が偶数なので、
+<strong>偶数のチャンクが行の最後になることはない</strong>。</p>
+</blockquote>
+<p>「行長が偶数」という一見どうでもいい性質が、端数処理を消すために使われている。</p>
+<h3>2.4 gate-major というバグ修正</h3>
+<blockquote>
+<p>最初の版は <code>gate_up[h*2FF + {0..FF-1}] = gate</code>、<code>[h*2FF + FF..] = up</code> と書いていた。
+どちらも<strong>連続した範囲</strong>を歩くので、hit が 2 個以上あると <strong>hit 0 の UP 行を、他の hit の
+gate 行があるべき場所で読む</strong>。gate-major にすると、2 つの他のカーネルにストライドを足すのではなく
+<strong>食い違い自体が消える</strong>。</p>
+</blockquote>
+<blockquote>
+<p><strong>教訓</strong>: レイアウトの不一致は「ストライドを足して合わせる」より「レイアウトを変えて消す」。</p>
+</blockquote>
+<h3>2.5 bias の引き算を動かすと値が変わる</h3>
+<pre><code class="language-cpp">// The CPU subtracts the weight bias after its eight FMA accumulators have been reduced. Moving the
+// subtraction into each integer dot, as the legacy kernel does, changes rounding even with equal scales.
+__global__ void activation_correction_kernel(const uint8_t* q8, const float* scales, float* hx, int chunks)
+</code></pre>
+<p>「スケールが等しいから同じ」は成り立たない。<strong>どこで減算するかが丸めを決める</strong>。
+だから CPU 順序を再現する <code>cpu_order_projection_kernel</code> / <code>cpu_order_swiglu_kernel</code> /
+<code>cpu_order_quantize_kernel</code> が別に存在し、パリティテストが両方を 1 プロセスで走らせる
+（<code>STRATA_OLD_GROUPED=1</code> で A/B）。</p>
+<hr>
+<h2>3. グループ化 — 1 回の読みで複数のトークン</h2>
+<p>verify では 1 回のパスで最大 3〜5 トークンを検査する。同じ expert に複数トークンが行くなら、
+<strong>行を 1 回読んで全部のトークンに使う</strong>のが正しい。</p>
+<blockquote>
+<p>「Plan v0.3 P6: experts GROUPED — グループごとに 1 つの blob ポインタ（VRAM スロット、
+または PCIe 越しに読むマップ済みホスト blob）。グループの全エントリ（その expert に
+ルーティングされたトークン）を、<strong>各行 1 回の読み</strong>から計算する。」</p>
+</blockquote>
+<pre><code class="language-cpp">// Gate/up: 1 ブロック = 1 グループの GU_ROWS 行。グループの活性（各エントリのトークン行 x_q8_0 と
+// その fp32 スケール）を shared に 1 回だけ整列ワードとして置き、各ワープが自分の行を歩き、
+// レーンのコードチャンクを 1 回読んで全エントリと dot する。
+__global__ void __launch_bounds__(256) gu_grouped_kernel(const unsigned long long* grp_ptr, ...)
+</code></pre>
+<h3>3.1 8-way バンクコンフリクトの発見と修正</h3>
+<blockquote>
+<p>「上のレイアウトは <strong>8-way バンクコンフリクト</strong>。<code>xs_q[k][c*8+j]</code> はレーン L のワード j を
+<code>8L+j</code> に置くので、レーン <code>L, L+4, L+8, …</code> がチャンクの 8 回の読みすべてで同じバンクを共有する。
+さらに <code>chunk_dot</code> は（エントリだけで決まる）<code>hx</code> を行ごとに再計算していた。」</p>
+</blockquote>
+<p>修正は「ワード優先」レイアウト:</p>
+<pre><code>xs_w[j][k * NC + c]    ワード j（再グループ化したチャンク）、レーンは連続ワードを読む
+xs_dh[k * NC + c]      (dx, hx) — チャンクあたり float 1 個 + dp4a 8 回ではなく 64bit 1 回
+</code></pre>
+<p>「ワード優先だと書き込みも連続になる（フラット index <code>i</code> がそのまま <code>k * NC + c</code>）ので、
+どちら側もコンフリクトせず、パディングも要らない。」さらに<strong>各ワープが行を 2 本ずつ</strong>扱う
+（隣接行: gate <code>r</code> と up <code>r</code>）ので、shared 読みが両方に効き、<strong>コードの展開が
+エントリごとではなく行ごとに 1 回</strong>で済む。</p>
+<h3>3.2 常駐判定もデバイスで行う</h3>
+<blockquote>
+<p>「Plan v0.3 P4: この層のルーティング先 expert のうちどれが常駐かは<strong>デバイス上で</strong>決める
+（静的な常駐行から）。リングと hit カーネルの間にホストのステップを挟まない。」</p>
+</blockquote>
+<p><code>hit_select_kernel</code>（1 ワープ、k ≤ 32）、<code>hit_select_multi_kernel</code>（最大 128 エントリ、4 ワープ、
+ballot をエントリ順に詰める）、<code>add_hits_kernel</code>（部分和の加算）。
+MTP 層のように全 expert が <code>base + id * blob</code> に常駐する場合は <code>group_resident_kernel</code> が
+グループをデバイス上で組む。</p>
+<hr>
+<h2>4. shared expert — 7 つのカーネルのうち 6 つは説明がつく。1 つはつかない</h2>
+<h3>4.1 仕様</h3>
+<pre><code>h = silu(x @ gate_shexp.T) * (x @ up_shexp.T)     ← SILU は GATE にかかる。up ではない
+h = h @ down_shexp.T
+g = sigmoid(x @ gate_inp_shexp)                   ← トークンあたり【1 スカラー】
+return h * g[:, None]
+</code></pre>
+<blockquote>
+<p>ここには<strong>何ラウンドも間違って信じられていた</strong> 2 点がある。
+<strong>SILU は gate テンソルにかかる</strong>。逆の読みは自然で、形も正しく、そして間違い。
+そして <code>ffn_gate_inp_shexp</code> は <code>(n_embd,)</code> で出力は「トークンあたり 1 値」—
+<strong>そのベクトルと隠れ状態の dot で得られるスカラー gate</strong> であって、expert ごとの gate でも
+次元ごとの要素積でもない。</p>
+<p>結果は routed 出力に<strong>加算</strong>される。router で重み付けされるのでも、再正規化されるのでもない。</p>
+</blockquote>
+<h3>4.2 1 スレッドがモデル最大の単一カーネルだった</h3>
+<p>旧コメント:「n_embd は 2560 なので短い直列ループだし、並列性は他所にある。」
+ソースの反論:</p>
+<blockquote>
+<p><strong>2560 回は短くない。しかも各回が DOUBLE の積和だから。このカードの double レートは float の
+1/64。つまりこのループは、1/64 レートのユニットを通る 2560 段の依存チェーン</strong>であり、
+2560 回の非合体グローバルロードを 1 スレッドが発行することを数える前から、数十 µs。</p>
+</blockquote>
+<p>実測:</p>
+<pre><code>  shared_expert  0.2374 ms / 0.8883 ms ブロック  = 26.7%
+                 トークンあたり 11.4 ms
+                 3 つの射影が読む量 5.5 MB、そのメモリ床 0.009 ms
+</code></pre>
+<blockquote>
+<p>「7 つのカーネルがあり、6 つは 640〜2560 要素の GEMV か要素演算。
+<strong>帯域では説明できないのはこれ 1 つだけ。</strong>」</p>
+</blockquote>
+<p>修正は<strong>チェーンを切る</strong>だけで、精度は落とさない:</p>
+<blockquote>
+<p>「double のアキュムレータは<strong>残す</strong>。<code>ref/gr.py</code> は float64 で縮約するし、<code>gr.cu</code> の
+<code>block_sum</code> も同じ理由で存在する — ツリーの和の順序は参照のものではないから、
+順序が問題にならないだけの精度で守る。変えるのは<strong>チェーン</strong>で、1 スレッド 2560 項ではなく
+10 項 + ツリー縮約。sigmoid を通した後では、dot の 1e-16 相対差は差ではない。」</p>
+</blockquote>
+<h3>4.3 5120 バイトの越境読み — 「もっともらしい嘘」</h3>
+<blockquote>
+<p><strong>両オペランドは BF16。これは参照の契約であって、保存形式の話ではない。</strong>
+<code>gate_inp_shexp</code> は BF16 重みなので、ggml は活性を <code>vec_dot_type</code>（＝BF16）に変換する。
+このカーネルはかつて <code>const float* w</code> を受けていたが、<strong>ローダは既にテンソルを
+2 B/要素に丸め直していた</strong>。つまり 5120 バイトのバッファから 2560 個の float を読んだ —
+<strong>テンソルの終端を 5120 バイト越えて</strong>、4.5 GiB のアリーナの内側、誰もフォールトしない場所で。
+dot は天文学的に大きくなり、sigmoid は 1.0 に飽和し、<code>scale_kernel</code> が shared expert の
+出力をそれで掛けた。</p>
+<p><strong>ここでの間違ったスカラーは静かな失敗モード</strong>: sigmoid は被害を [0,1] に閉じ込めるので、
+0.5 であるべき gate が 1.0 を読むと shared expert が 2 倍になり、<strong>完全に有限で、
+完全にもっともらしい logits</strong> が出る。</p>
+</blockquote>
+<p>「有界な関数」は GPU の範囲外読みと最悪の相性である。</p>
+<h3>4.4 f32 → f16 の NaN バグ（round 198）</h3>
+<blockquote>
+<p><code>f32_to_f16</code> はここに私設コピーとして存在した。round 198 がそれを見つけた —
+そして <code>quantize_act.cu</code> の同一コピーも — <strong>有限値が fp16 をオーバーフローするとき
+必ず NaN を返していた</strong>（1e30, 65536, 1e45）。飽和して inf になるべきところで。
+理由は <code>exp &gt;= 31</code> が <strong>f32 の inf/NaN と範囲外の有限指数を混同</strong>していたから。
+このファイルのフィクスチャは全部 O(1) なので、見えなかった。</p>
+</blockquote>
+<p><strong>テストが通る範囲が、テストの守る範囲</strong>である。</p>
+<hr>
+<h2>5. 合成（combine）</h2>
+<pre><code class="language-cpp">// GATED (S26 STRATA_LFUSE): `shared` は shared expert の未スケール出力、sg はトークンごとの生 gate logit。
+// 行は shared_expert_multi と同様にここでスケールされ（native_scalar_sigmoid_multi_kernel の式、
+// 続いて 1 回の丸め乗算 = scale_rows_kernel の `out *= g`）、その後これまで通り加算される。
+__global__ void combine(const float* parts, const float* weights, ...);
+__global__ void combine_k10_vec4(const float4* parts4, const float* weights, ...);
+</code></pre>
+<p>10 個の部分和に router の重みを掛けて足す。<code>combine_k10_vec4</code> は float4 で 4 要素ずつ。
+S26（<code>STRATA_LFUSE</code>）では shared expert のスケールを合成側に融合し、カーネル 1 本を消している。</p>
+<hr>
+<h2>6. この章のまとめ — MoE が教える 5 つのこと</h2>
+<ol>
+<li><strong>演算量は時間ではない</strong>。1 スレッドの 5,120 演算がトークンの 56% を食った。</li>
+<li><strong>O(n²) の“構造”を疑う</strong>。中の FP64 を外しても構造が残れば遅いまま。</li>
+<li><strong>整数で dot し、float はチャンク単位で</strong>。代数変形（bias を外へ）が dp4a を可能にする。</li>
+<li><strong>並列化の可否は「ビット一致を証明できるか」で決める</strong>。証明できない部分だけ直列に残す。</li>
+<li><strong>有界な関数はバグを隠す</strong>。sigmoid も fp16 飽和も、症状をもっともらしくする。</li>
+</ol>
+<hr>
+<p><em>次: <a href="05_attention_gdn.html">05 注意機構と GDN</a> — QSA の indexer、KV の 3 階層、DeltaNet の状態。</em></p>
+</article><div class="pager"><a href="03_decode_gemv.html">← 03. Decode GEMV — 31.64 GiB を 1 トークンで読む</a><span><a href="05_attention_gdn.html">05. 注意機構と GDN — 「選ぶ」attention と、「状態」の再帰 →</a></span></div><footer><p>出典: github.com/Niko1221/Strata HEAD 61b3fb5（v0.1.49）／ 本文中の行番号・定数はこのリビジョンのもの。図は同梱 PNG（2 倍解像度）。</p></footer></div></body></html>

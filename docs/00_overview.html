@@ -1,0 +1,303 @@
+<!doctype html><html lang="ja"><head><meta charset="utf-8"><meta name="viewport" content="width=device-width,initial-scale=1"><title>Strata CUDA ソース読解 — STRATA CUDA ソース読解</title><link rel="icon" href="../favicon.svg" type="image/svg+xml"><style>:root{--paper:#fffdf8;--ink:#191510;--muted:#605a4e;--rule:#d6d0c0;--link:#1f4e79;--accent:#9e2b25;--tint:#f5f2e8}
+*{box-sizing:border-box}
+body{background:var(--paper);color:var(--ink);font-family:"Hiragino Mincho ProN","Yu Mincho",YuMincho,Georgia,"Times New Roman",serif;font-size:16.5px;line-height:1.95;margin:0;-webkit-font-smoothing:antialiased}
+.wrap{max-width:760px;margin:0 auto;padding:52px 26px 110px}
+.masthead{font-family:"SF Mono",Menlo,monospace;font-size:11px;letter-spacing:.16em;text-transform:uppercase;color:var(--muted);border-bottom:1px solid var(--rule);padding-bottom:10px;display:flex;justify-content:space-between;gap:14px;margin-bottom:42px}
+.masthead a{color:var(--muted);text-decoration:none;border:0}
+.masthead a:hover{color:var(--link)}
+h1{font-size:30px;line-height:1.45;font-weight:600;margin:0 0 .35em;letter-spacing:.01em}
+h1 small{display:block;font-size:15px;font-weight:400;color:var(--muted);margin-top:.6em;letter-spacing:.02em}
+h2{font-size:18px;font-weight:600;margin:2.6em 0 .8em;padding-bottom:.3em;border-bottom:1px solid var(--rule);letter-spacing:.02em}
+h2 span{font-family:"SF Mono",Menlo,monospace;font-size:11px;color:var(--muted);letter-spacing:.14em;margin-left:.6em;font-weight:400;text-transform:uppercase}
+h3{font-size:16.5px;font-weight:700;margin:2em 0 .5em;letter-spacing:.01em}
+p{margin:.95em 0;text-align:justify}
+a{color:var(--link);text-decoration:none;border-bottom:1px solid rgba(31,78,121,.28)}
+a:hover{border-bottom-color:var(--link)}
+strong{font-weight:700}
+code{font-family:"SF Mono",Menlo,ui-monospace,monospace;font-size:13px;background:var(--tint);padding:.05em .32em;word-break:break-word}
+pre{background:var(--tint);border:1px solid var(--rule);border-left:3px solid #b8b0a0;padding:13px 16px;overflow-x:auto;font-size:12.6px;line-height:1.68;margin:1.5em 0}
+pre code{background:none;padding:0;font-size:12.6px}
+blockquote{margin:1.5em 0;padding:.15em 0 .15em 1.1em;border-left:2px solid #c3bba9;color:#3b382f;text-align:left}
+blockquote p{margin:.4em 0}
+table{border-collapse:collapse;width:100%;margin:1.6em 0;font-size:13.8px;font-variant-numeric:tabular-nums;display:block;overflow-x:auto}
+th,td{border:0;border-bottom:1px solid #e4dfd1;padding:7px 12px 7px 0;text-align:left;vertical-align:top}
+thead th{border-bottom:1.4px solid var(--ink);font-weight:700;white-space:nowrap;background:none}
+ul,ol{padding-left:1.5em;margin:.9em 0}
+li{margin:.32em 0}
+hr{border:0;border-top:1px solid var(--rule);margin:2.4em 0}
+.figrow{display:block;margin:2em -82px}
+.figlink{display:block;border:0;margin:0 0 1.3em}
+.figlink:last-child{margin-bottom:0}
+.figlink img{width:100%;display:block;border:1px solid var(--rule)}
+.figcap{display:block;font-size:12.6px;color:var(--muted);margin-top:.55em;text-align:center;font-family:"SF Mono",Menlo,monospace;letter-spacing:.02em}
+.abstract{font-size:15.5px;color:#2c2a24;margin:1.5em 0 2.2em}
+.meta{width:100%;border-collapse:collapse;font-size:13.4px;margin:0 0 2.8em;font-family:"SF Mono",Menlo,monospace;display:table}
+.meta th{text-align:left;font-weight:400;color:var(--muted);width:9em;border-top:1px solid var(--rule);padding:7px 10px 7px 0;vertical-align:top;letter-spacing:.04em}
+.meta td{border-top:1px solid var(--rule);padding:7px 0;vertical-align:top}
+.toc{list-style:none;padding:0;margin:1.2em 0}
+.toc li{border-top:1px solid #e8e3d5;padding:.9em 0}
+.toc li:last-child{border-bottom:1px solid #e8e3d5}
+.toc .n{font-family:"SF Mono",Menlo,monospace;font-size:11.5px;color:var(--muted);letter-spacing:.12em}
+.toc .row{display:block;border:0;color:inherit;padding:0}
+.toc .row:hover .t{color:var(--link);border-bottom:1px solid rgba(31,78,121,.3)}
+.toc .t{display:inline-block;font-size:16.5px;margin:.1em 0 .18em;border-bottom:1px solid transparent}
+.toc .d{display:block;font-size:14px;color:var(--muted);line-height:1.7}
+.toc .s{font-family:"SF Mono",Menlo,monospace;font-size:11px;color:#8b8677;letter-spacing:.06em}
+.gallery{display:grid;grid-template-columns:1fr 1fr;gap:24px;margin:1.6em 0}
+.gallery a{display:block;border:0;color:inherit}
+.gallery img{width:100%;display:block;border:1px solid var(--rule)}
+.gallery .cap{font-size:12.6px;margin-top:.55em;font-family:"SF Mono",Menlo,monospace;color:var(--ink)}
+.gallery .cd{font-size:12.4px;color:var(--muted);line-height:1.65;margin-top:.2em}
+footer{margin-top:4em;padding-top:1.2em;border-top:1px solid var(--rule);font-size:13.4px;color:var(--muted)}
+footer p{margin:.6em 0}
+.pager{display:flex;justify-content:space-between;gap:16px;font-size:13.4px;margin-top:3.2em;padding-top:1.1em;border-top:1px solid var(--rule);color:var(--muted)}
+@media(max-width:1100px){.figrow{margin:1.8em 0}}
+@media(max-width:640px){body{font-size:16px}.wrap{padding:32px 18px 80px}h1{font-size:23px}.gallery{grid-template-columns:1fr}}
+@media print{body{background:#fff;font-size:11pt}.masthead,.pager{display:none}a{color:#000;border:0}pre,table,.figlink{page-break-inside:avoid}}
+</style></head><body><div class="wrap"><div class="masthead"><a href="../index.html">← 目次 / 図一覧</a><span>STRATA 読解 · 00 / 08</span></div><article><div align="center"><h1>Strata CUDA ソース読解</h1>
+<h3>25,371 行の .cu が、125B MoE を 12GB の VRAM で動かすまで</h3>
+<p>Strata 0.1.49 / Qwen3.8-Flash-Next (125B, 48層, 24,576 expert, top-10)</p>
+</div><hr>
+<h2>0. この本の読み方</h2>
+<p>このリポジトリ src/ 配下の .cu は <strong>46 ファイル・25,371 行</strong>（src/kernels/cuda）、
+さらに prefill 用に約 5,000 行（src/prefill）がある。全部を頭から読むのは不可能なので、
+この本は「<strong>1 トークンが生まれるまで</strong>」という 1 本の線に沿って並べ直してある。</p>
+<table>
+<thead>
+<tr>
+<th>章</th>
+<th>内容</th>
+<th>対応するソース</th>
+</tr>
+</thead>
+<tbody><tr>
+<td><a href="00_overview.html">00 全体像</a></td>
+<td>実行モード、レイヤ構成、ホスト/デバイスの分担</td>
+<td>src/core/layer.cpp, src/program/generate.cpp</td>
+</tr>
+<tr>
+<td><a href="01_memory.html">01 メモリ</a></td>
+<td>SSD → RAM → VRAM → SMEM の 4 段、expert cache、PCIe リング</td>
+<td>src/core/{vmm,expert_cache,pinned}.cu</td>
+</tr>
+<tr>
+<td><a href="02_quant.html">02 量子化</a></td>
+<td>S2/S4/S8、IQ 系、Q8_0/Q8_K 活性のブロックレイアウト</td>
+<td>s_gemv.hpp, iq_kernels.hpp, docs/pack-format.md</td>
+</tr>
+<tr>
+<td><a href="03_decode_gemv.html">03 Decode GEMV</a></td>
+<td>重み 31.64GiB を読むホットパス</td>
+<td>s_gemv.cu ★ 全注釈付き</td>
+</tr>
+<tr>
+<td><a href="04_moe.html">04 MoE</a></td>
+<td>router → CPU プール → combine、shared expert</td>
+<td>s2_expert_grouped.cu, shared_expert.cu</td>
+</tr>
+<tr>
+<td><a href="05_attention_gdn.html">05 Attention / GDN</a></td>
+<td>QSA(indexer+topk+attend)、KV 圧縮、DeltaNet</td>
+<td>qsa*.cu, kv_*.cu, fused_gdn.cu</td>
+</tr>
+<tr>
+<td><a href="06_prefill.html">06 Prefill</a></td>
+<td>int8 テンソルコア MoE、cuBLAS GEMM、GDN 再帰</td>
+<td>src/prefill/*.cu</td>
+</tr>
+<tr>
+<td><a href="07_misc.html">07 その他</a></td>
+<td>sampler、PLE、GR、verify、elementwise</td>
+<td>sampler.cu, ple.cu, fused_gr.cu</td>
+</tr>
+<tr>
+<td><a href="08_catalog.html">08 ファイル目録</a></td>
+<td>46+9 ファイルの役割・行数・起動構成</td>
+<td>全ファイル</td>
+</tr>
+</tbody></table>
+<p>図はすべて <code>diagrams/png/</code> の PNG（<a href="../index.html">index.html</a> の「図」節からも辿れる）。
+1 トークンの流れは、まずこの 1 枚を見よ。</p>
+<div class="figrow"><a class="figlink" href="../diagrams/light/png/token-pipeline.png"><img src="../diagrams/light/png/token-pipeline.png" alt="00 1 トークン・1 レイヤー"><span class="figcap">00 1 トークン・1 レイヤー</span></a></div><hr>
+<h2>1. まず結論: このエンジンの設計思想</h2>
+<p>Strata は「<strong>GPU に載らないものは、載せないまま計算する</strong>」という一点に賭けたエンジンである。
+125B のモデルは 2bit 量子化しても 38GiB あり、24GB の VRAM には収まらない。普通の実装は
+「量子化を強める」「層を CPU に逃がす（オフロード）」のどちらかを選ぶ。Strata はそのどちらでもなく、</p>
+<blockquote>
+<p><strong>重みは全部 RAM に常駐させ、GPU が持っているのは“注意力とルータと少数のホット expert”だけ。
+expert の計算は、GPU が Attention を計算している間に CPU が自分でやる。</strong></p>
+</blockquote>
+<p>を選んだ。そのためエンジンの本体は「GEMV を速くする」ことではなく、
+<strong>GPU と CPU をどう重ねるか（スケジューリングとドアベル）</strong> に置かれている。
+.cu を読むときも、常に「これは誰と並列に走るのか」を意識すると読みやすい。</p>
+<hr>
+<h2>2. 3 つの実行モード</h2>
+<pre><code>                 ┌──────────── decode（1トークンずつ） ────────────┐
+ 入力トークン →  │ router → expert選択 → GEMV(MoE) → attention → head │ → 1トークン
+                 └────────────────────────────────────────────────────┘
+
+                 ┌───────── verify（MTP 投機の検証、最大4トークン） ──┐
+ 下書き 3 個 →   │ 同じ重みで 4 トークン分を一括 forward → 受理/棄却   │
+                 └────────────────────────────────────────────────────┘
+
+                 ┌───────── prefill（プロンプト、最大8192トークン） ──┐
+ 長い入力 →      │ GEMM（テンソルコア）でまとめて、expertはPCIeで流す  │
+                 └────────────────────────────────────────────────────┘
+</code></pre>
+<ul>
+<li><strong>decode</strong>: バッチ 1。GEMV（行列×ベクトル）。メモリ帯域律速なので、カーネルは
+「重み 1 バイトを何回の命令で消費するか」を削る競技になる → 第 3 章。</li>
+<li><strong>verify</strong>: 投機的デコードの検証。バッチは最大 4 だが、<strong>算術は decode とビット一致</strong>でなければ
+ならない（<code>verify_kernels.cu</code> の冒頭コメント）。ここが本エンジンで一番「職人芸」の箇所。</li>
+<li><strong>prefill</strong>: バッチ数千。GEMV ではなく GEMM なので、int8 テンソルコアで
+量子化重みを直接掛ける（<code>moe_fused.cu</code>）→ 第 6 章。</li>
+</ul>
+<hr>
+<h2>3. レイヤの解剖</h2>
+<p>Qwen3.8-Flash-Next の 1 層は、大きく 3 つのブロックからなる。</p>
+<pre><code>   x (残差ストリーム)
+   │
+   ├─▶ [ GR (gated residual) ] ── 正規化 + ゲート付き残差書き込み ──┐
+   │                                                              │
+   ├─▶ [ Mixer ]  ← 層によって 2 種類                        (残差に加算)
+   │      ├─ GDN 層 : DeltaNet（線形注意、状態 S×h_v×S を持つ）
+   │      └─ QSA 層 : Qwen Sparse Attention（indexer で top-k を選ぶ疎な注意）
+   │
+   └─▶ [ MoE ]
+          ├─ router: 24,576 expert から top-10 を選ぶ（BF16 必須）
+          ├─ routed experts: 10 個（GPU 常駐 or CPU プール）
+          └─ shared expert: 全トークン共通の 1 個（常に GPU）
+</code></pre>
+<h3>GR（gated residual）が地味に重い</h3>
+<p><code>fused_gr.cu</code> は <strong>1,991 行</strong>あり、単体ファイルとしては 3 番目に大きい。それだけ
+「残差の書き込み方」に神経を使っている。理由は、MoE の計算を CPU に投げる間に
+残差ストリームを壊してはいけないからで、<strong>pre 側で GR を書き、post 側で読み戻す</strong>という
+2 段階のプロトコルになっている。</p>
+<h3>分割グラフ（このエンジンの心臓）</h3>
+<pre><code>block_layer_pre[l]                          block_layer_post[l]
+┌────────────────────────────┐              ┌───────────────────────────┐
+│ attn(QSA/GDN) → GR write   │              │ moe_finish → GR write     │
+│ → ffn gr_read → moe_route  │              │                           │
+│        │                   │              │                           │
+│        └── ドアベル ───────┼──▶ ホスト ──▶│                           │
+└────────────────────────────┘   CPU プール  └───────────────────────────┘
+        GPU が走る                       CPU が走る            GPU が走る
+</code></pre>
+<p><code>moe_route</code> の最後で <strong>ドアベル</strong>（mapped pinned memory にシーケンス番号を書くカーネル）を鳴らすと、
+ホスト側のスレッドがそれを待っていて、CPU プールで「GPU に載っていない expert」を計算し始める。
+GPU はその間、<code>shared_expert</code>（既定で pre 側に前倒し = <code>layer_set_shared_early</code>）を計算する。</p>
+<blockquote>
+<p><strong>落とし穴（round 199 の記録）</strong>: <code>cudaEventRecord</code> は CUDA Graph のキャプチャ中では
+<strong>黙って落ちる</strong>。だから同期はイベントではなく、明示的にカーネルが書くドアベルにしてある。
+これは <code>elementwise.cu</code> の <code>doorbell_ring_kernel</code> にある。</p>
+</blockquote>
+<hr>
+<h2>4. ホストとデバイスの分担</h2>
+<table>
+<thead>
+<tr>
+<th>担当</th>
+<th>やること</th>
+<th>代表ファイル</th>
+</tr>
+</thead>
+<tbody><tr>
+<td>GPU</td>
+<td>attention, router, shared expert, VRAM 常駐 expert, KV, head, sampler</td>
+<td><code>src/kernels/cuda/*</code></td>
+</tr>
+<tr>
+<td>CPU</td>
+<td><strong>GPU に載っていない expert の GEMV</strong>（AVX-512 / AVX2、ggml の i-quant カーネル）</td>
+<td><code>ref/</code> と <code>bench/micro/cpu_s2.cpp</code></td>
+</tr>
+<tr>
+<td>ホスト制御</td>
+<td>CUDA Graph の組み立て、ドアベル待ち、expert cache の更新、PCIe 転送の発行</td>
+<td><code>src/core/layer.cpp</code>（1,510行）, <code>src/program/generate.cpp</code>（13,110行）</td>
+</tr>
+</tbody></table>
+<p><code>layer.cpp</code> の <code>gemv_quantized()</code> はこの本で一番よく出てくる分岐なので、最初に要約を置く:</p>
+<pre><code class="language-cpp">// 重みの形式で 4 通りに分かれる（層の中で混在する）
+if (native_data)                        // ネイティブ(i-quant)パック
+    native_quantize_q8_1(...); native_mmvq(type, ...);   // llama.cpp の MMVQ を再利用
+else if (form.code_bits == 2 &amp;&amp; act_is_q8_0)
+    quantize_q8_0(...); s2_gemv_q8(...);                 // Q2_0 専用の高速路
+else if (wants_q8k)
+    quantize_q8_K(...); s_gemv_q8k_split(...);           // K-quant / IQ4_XS
+else
+    quantize_q8_0(...); s_gemv_q8_0_split(...);          // ffn_down_shexp (n_in=640)
+</code></pre>
+<p>この 4 分岐を取り違えると、<strong>同じ forward の中で expert ごとに違う数値</strong>が出る。
+<code>quantize_act.cu</code> の冒頭には「Q8_0 と Q8_K を取り違えると GEMV 誤差 0.6〜1.4%」と記録されている。
+→ 第 2 章・第 3 章で詳述。</p>
+<hr>
+<h2>5. 数値契約という文化</h2>
+<p>このリポジトリのコメントは異常に詳しい。理由はコードの冒頭に書いてある:</p>
+<blockquote>
+<p>「<strong>算術は転記する（transcribed）のであって、思い出す（recalled）ものではない</strong>」</p>
+</blockquote>
+<p>つまり llama.cpp のカーネルとビット単位で一致させることを目的にしていて、一致しない場合は
+「どちらが正しいか」ではなく「<strong>どこで丸めが違ったか</strong>」を特定してコメントに残す運用になっている。
+代表例:</p>
+<ul>
+<li><code>quantize_act.cu</code>: <code>d32 = amax/127</code> は FP32 で計算し、<strong>量子化後の整数は d32 で割る</strong>。
+保存される fp16 丸め値で割ると 80 ブロック中 18 ブロックが ggml のバイト列と食い違った。</li>
+<li><code>s_gemv.cu</code>: offset（Q4_K の min）は <strong>重みに足してから</strong>活性と掛ける。
+<code>acc += code*scale*x + offset*x</code> と書くと数学的には同じだが丸めが変わる。</li>
+<li><code>rope.cu</code>: ペアリングは <strong>NEOX</strong>（<code>i</code> と <code>i + n_rot/2</code>）。隣接ペア（<code>2i, 2i+1</code>）と間違えると
+「形は正しいが中身がスクランブルされた出力」が出る。</li>
+<li><code>shared_expert.cu</code>: SiLU は <strong>gate 側</strong>。up 側にかけても形は合ってしまう。</li>
+</ul>
+<p>だからこの本も「結論」より「<strong>なぜその順序でなければならないか</strong>」を優先して書く。</p>
+<hr>
+<h2>6. どこから読むか（おすすめ順）</h2>
+<ol>
+<li><code>docs/pack-format.md</code>（パックの物理レイアウト、S2 の 2bit 配置）</li>
+<li><strong><code>src/kernels/cuda/s_gemv.cu</code></strong>（<a href="03_decode_gemv.html">第3章</a> に全注釈）— エンジンの 8 割はここ</li>
+<li><code>src/kernels/cuda/elementwise.cu</code> のドアベル 4 関数 — 並列の起点</li>
+<li><code>src/core/layer.cpp</code> の <code>gemv_quantized</code> と <code>block_layer_pre/post</code> — 呼び出し順</li>
+<li><code>src/prefill/moe_fused.cu</code> 冒頭 60 行 — 「魔法の float」トリックの説明</li>
+<li><code>src/kernels/cuda/sampler.cu</code> 冒頭 — サンプラ順序の落とし穴</li>
+</ol>
+<hr>
+<h2>7. 用語</h2>
+<table>
+<thead>
+<tr>
+<th>語</th>
+<th>意味</th>
+</tr>
+</thead>
+<tbody><tr>
+<td>S2 / S4 / S8</td>
+<td>Strata 独自の「コード幅」表現。S2 = 2bit コード + 64要素ごとの FP32 スケール（Q2_0 の正規形）</td>
+</tr>
+<tr>
+<td>code_bits</td>
+<td>1 要素あたりのビット数（2/4/8）。13 種類の量子化形式が 3 幅に潰れる</td>
+</tr>
+<tr>
+<td>act_kind</td>
+<td>活性の量子化形式。Q8_0(34B/32) と Q8_K(292B/256) の 2 種。<strong>形式からは導出できない</strong>ので明示</td>
+</tr>
+<tr>
+<td>ドアベル</td>
+<td>カーネルが書く同期用の番号。CUDA Graph 内でイベントが使えないための代替</td>
+</tr>
+<tr>
+<td>CPU プール</td>
+<td>GPU に載っていない expert を計算するホスト側スレッド群</td>
+</tr>
+<tr>
+<td>MTP</td>
+<td>Multi-Token Prediction。投機の下書き層</td>
+</tr>
+<tr>
+<td>PLE</td>
+<td>28.8GB の n-gram テーブル。SSD から直接読む</td>
+</tr>
+</tbody></table>
+<hr>
+<p><em>次: <a href="01_memory.html">01 メモリ階層</a> — SSD から SMEM までの 4 段を、サイズと帯域の実数で追う。</em></p>
+</article><div class="pager"><span></span><span><a href="01_memory.html">01. メモリ階層 — SSD から SMEM まで →</a></span></div><footer><p>出典: github.com/Niko1221/Strata HEAD 61b3fb5（v0.1.49）／ 本文中の行番号・定数はこのリビジョンのもの。図は同梱 PNG（2 倍解像度）。</p></footer></div></body></html>
