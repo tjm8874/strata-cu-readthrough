@@ -1,0 +1,432 @@
+<!doctype html><html lang="ja"><head><meta charset="utf-8"><meta name="viewport" content="width=device-width,initial-scale=1"><title>06. Prefill — 計算律速に切り替わる世界 — STRATA CUDA ソース読解</title><link rel="icon" href="../favicon.svg" type="image/svg+xml"><style>:root{--paper:#fffdf8;--ink:#191510;--muted:#605a4e;--rule:#d6d0c0;--link:#1f4e79;--accent:#9e2b25;--tint:#f5f2e8}
+*{box-sizing:border-box}
+body{background:var(--paper);color:var(--ink);font-family:"Hiragino Mincho ProN","Yu Mincho",YuMincho,Georgia,"Times New Roman",serif;font-size:16.5px;line-height:1.95;margin:0;-webkit-font-smoothing:antialiased}
+.wrap{max-width:760px;margin:0 auto;padding:52px 26px 110px}
+.masthead{font-family:"SF Mono",Menlo,monospace;font-size:11px;letter-spacing:.16em;text-transform:uppercase;color:var(--muted);border-bottom:1px solid var(--rule);padding-bottom:10px;display:flex;justify-content:space-between;gap:14px;margin-bottom:42px}
+.masthead a{color:var(--muted);text-decoration:none;border:0}
+.masthead a:hover{color:var(--link)}
+h1{font-size:30px;line-height:1.45;font-weight:600;margin:0 0 .35em;letter-spacing:.01em}
+h1 small{display:block;font-size:15px;font-weight:400;color:var(--muted);margin-top:.6em;letter-spacing:.02em}
+h2{font-size:18px;font-weight:600;margin:2.6em 0 .8em;padding-bottom:.3em;border-bottom:1px solid var(--rule);letter-spacing:.02em}
+h2 span{font-family:"SF Mono",Menlo,monospace;font-size:11px;color:var(--muted);letter-spacing:.14em;margin-left:.6em;font-weight:400;text-transform:uppercase}
+h3{font-size:16.5px;font-weight:700;margin:2em 0 .5em;letter-spacing:.01em}
+p{margin:.95em 0;text-align:justify}
+a{color:var(--link);text-decoration:none;border-bottom:1px solid rgba(31,78,121,.28)}
+a:hover{border-bottom-color:var(--link)}
+strong{font-weight:700}
+code{font-family:"SF Mono",Menlo,ui-monospace,monospace;font-size:13px;background:var(--tint);padding:.05em .32em;word-break:break-word}
+pre{background:var(--tint);border:1px solid var(--rule);border-left:3px solid #b8b0a0;padding:13px 16px;overflow-x:auto;font-size:12.6px;line-height:1.68;margin:1.5em 0}
+pre code{background:none;padding:0;font-size:12.6px}
+blockquote{margin:1.5em 0;padding:.15em 0 .15em 1.1em;border-left:2px solid #c3bba9;color:#3b382f;text-align:left}
+blockquote p{margin:.4em 0}
+table{border-collapse:collapse;width:100%;margin:1.6em 0;font-size:13.8px;font-variant-numeric:tabular-nums;display:block;overflow-x:auto}
+th,td{border:0;border-bottom:1px solid #e4dfd1;padding:7px 12px 7px 0;text-align:left;vertical-align:top}
+thead th{border-bottom:1.4px solid var(--ink);font-weight:700;white-space:nowrap;background:none}
+ul,ol{padding-left:1.5em;margin:.9em 0}
+li{margin:.32em 0}
+hr{border:0;border-top:1px solid var(--rule);margin:2.4em 0}
+.figrow{display:block;margin:2em -82px}
+.figlink{display:block;border:0;margin:0 0 1.3em}
+.figlink:last-child{margin-bottom:0}
+.figlink img{width:100%;display:block;border:1px solid var(--rule)}
+.figcap{display:block;font-size:12.6px;color:var(--muted);margin-top:.55em;text-align:center;font-family:"SF Mono",Menlo,monospace;letter-spacing:.02em}
+.abstract{font-size:15.5px;color:#2c2a24;margin:1.5em 0 2.2em}
+.meta{width:100%;border-collapse:collapse;font-size:13.4px;margin:0 0 2.8em;font-family:"SF Mono",Menlo,monospace;display:table}
+.meta th{text-align:left;font-weight:400;color:var(--muted);width:9em;border-top:1px solid var(--rule);padding:7px 10px 7px 0;vertical-align:top;letter-spacing:.04em}
+.meta td{border-top:1px solid var(--rule);padding:7px 0;vertical-align:top}
+.toc{list-style:none;padding:0;margin:1.2em 0}
+.toc li{border-top:1px solid #e8e3d5;padding:.9em 0}
+.toc li:last-child{border-bottom:1px solid #e8e3d5}
+.toc .n{font-family:"SF Mono",Menlo,monospace;font-size:11.5px;color:var(--muted);letter-spacing:.12em}
+.toc .row{display:block;border:0;color:inherit;padding:0}
+.toc .row:hover .t{color:var(--link);border-bottom:1px solid rgba(31,78,121,.3)}
+.toc .t{display:inline-block;font-size:16.5px;margin:.1em 0 .18em;border-bottom:1px solid transparent}
+.toc .d{display:block;font-size:14px;color:var(--muted);line-height:1.7}
+.toc .s{font-family:"SF Mono",Menlo,monospace;font-size:11px;color:#8b8677;letter-spacing:.06em}
+.gallery{display:grid;grid-template-columns:1fr 1fr;gap:24px;margin:1.6em 0}
+.gallery a{display:block;border:0;color:inherit}
+.gallery img{width:100%;display:block;border:1px solid var(--rule)}
+.gallery .cap{font-size:12.6px;margin-top:.55em;font-family:"SF Mono",Menlo,monospace;color:var(--ink)}
+.gallery .cd{font-size:12.4px;color:var(--muted);line-height:1.65;margin-top:.2em}
+footer{margin-top:4em;padding-top:1.2em;border-top:1px solid var(--rule);font-size:13.4px;color:var(--muted)}
+footer p{margin:.6em 0}
+.pager{display:flex;justify-content:space-between;gap:16px;font-size:13.4px;margin-top:3.2em;padding-top:1.1em;border-top:1px solid var(--rule);color:var(--muted)}
+@media(max-width:1100px){.figrow{margin:1.8em 0}}
+@media(max-width:640px){body{font-size:16px}.wrap{padding:32px 18px 80px}h1{font-size:23px}.gallery{grid-template-columns:1fr}}
+@media print{body{background:#fff;font-size:11pt}.masthead,.pager{display:none}a{color:#000;border:0}pre,table,.figlink{page-break-inside:avoid}}
+</style></head><body><div class="wrap"><div class="masthead"><a href="../index.html">← 目次 / 図一覧</a><span>STRATA 読解 · 06 / 08</span></div><article><h1>06. Prefill — 計算律速に切り替わる世界</h1>
+<blockquote>
+<p>対象: <code>src/prefill/gemm.cu</code>（873）、<code>wmma_gemm.cu</code>（737）、<code>moe_fused.cu</code>（728）、
+<code>moe_fused_iq.cu</code>（1215）、<code>moe_mmq.cu</code>（298）、<code>kernels.cu</code>（2214）、
+<code>gdn_rec_parity.cu</code>（1383）、<code>gemm_bf16_parity.cu</code>（155）、<code>ggml_cuda_host.cu</code>（147）</p>
+</blockquote>
+<div class="figrow"><a class="figlink" href="../diagrams/light/png/prefill.png"><img src="../diagrams/light/png/prefill.png" alt="06 prefill — チャンク → 密 GEMM → expert GEMM 4 系統"><span class="figcap">06 prefill — チャンク → 密 GEMM → expert GEMM 4 系統</span></a></div><p>decode は<strong>帯域律速</strong>（<a href="03_decode_gemv.html">03</a>）だった。prefill は<strong>計算律速</strong>になる。
+だからカーネルも、データ配置も、使う命令も、全部違う。Strata は decode 用と prefill 用に
+<strong>別々の実装を持つ</strong>（融合しない）という選択をしている。</p>
+<hr>
+<h2>1. prefill の流れ</h2>
+<pre><code>プロンプト（最大 8,192 トークンのチャンク。32,768 は --opt-in）
+   │
+   ├─ attention / GDN / GR はバッチ GEMM（ライブラリ or WMMA）
+   ├─ router で各トークンの top-10 を決め、expert ごとにグループ化
+   ├─ 必要 expert を RAM/SSD → VRAM へ PCIe でストリーム
+   │     └ リングは 0.1.39b 以降【バイト単位】でサイズ指定（#583）
+   └─ expert の GEMM を int8 テンソルコアで
+</code></pre>
+<p>関連する環境変数（<code>docs/</code> と <code>HOW_IT_WORKS.md</code> から）:</p>
+<table>
+<thead>
+<tr>
+<th>変数</th>
+<th>意味</th>
+</tr>
+</thead>
+<tbody><tr>
+<td><code>STRATA_RING_BYTES</code></td>
+<td>expert リングのバイトサイズ（#583 以降）</td>
+</tr>
+<tr>
+<td><code>STRATA_PREFILL_CPU_SHARE</code></td>
+<td>どれだけの expert を CPU 側で計算するか</td>
+</tr>
+<tr>
+<td><code>STRATA_ROUTE_TAIL_SKIP</code></td>
+<td>ルーティング末尾のスキップ</td>
+</tr>
+<tr>
+<td><code>--pcie-frac</code></td>
+<td>PCIe 帯域の配分（ブランチ f-142）</td>
+</tr>
+<tr>
+<td><code>--aux-cpus</code></td>
+<td>CPU プールに使うコア数</td>
+</tr>
+<tr>
+<td><code>STRATA_PREFILL_BF16X2</code></td>
+<td>BF16 2 項分割（後述）</td>
+</tr>
+</tbody></table>
+<hr>
+<h2>2. GEMM は 4 系統ある</h2>
+<table>
+<thead>
+<tr>
+<th>系統</th>
+<th>ファイル</th>
+<th>使う場面</th>
+</tr>
+</thead>
+<tbody><tr>
+<td>cuBLAS / hipBLASLt</td>
+<td><code>gemm.cu</code></td>
+<td>大型の BF16/FP16 GEMM。ベンダー最適化に任せる</td>
+</tr>
+<tr>
+<td>RDNA3 WMMA</td>
+<td><code>wmma_gemm.cu</code></td>
+<td>gfx1100/1101/1102/1150/1151 で自前タイル</td>
+</tr>
+<tr>
+<td>自前 int8 テンソルコア MoE</td>
+<td><code>moe_fused.cu</code>, <code>moe_fused_iq.cu</code></td>
+<td>Q2_0 / i-quant の expert を直接</td>
+</tr>
+<tr>
+<td>ggml MMQ</td>
+<td><code>moe_mmq.cu</code></td>
+<td>llama.cpp の MMQ をピン留め checkout からコンパイル</td>
+</tr>
+</tbody></table>
+<h3>2.1 「BF16 テンソルコアが無いカード」の長い歴史</h3>
+<p>これはコードコメントが最も饒舌な部分のひとつ。</p>
+<blockquote>
+<p>「Turing と Volta には BF16 テンソルコアが無い: <code>cublasGemmEx</code> は <code>CUDA_R_16BF</code> 入力で
+<strong>SIMT fp32 カーネル（magma_sgemmEx）に落ちる</strong>。RTX 2080 Ti で 4K プロンプトの 1/5（#655）、
+V100 でプロンプトの約 10%（#540）。」</p>
+</blockquote>
+<p>解決は「<strong>BF16 → FP16 は FP16 の正規範囲内で厳密</strong>」（7 ビット仮数は 10 ビットに収まる）:</p>
+<blockquote>
+<p>「重みと正規化済み活性はその範囲にある。FP16 経路では、重みは呼び出しごとに 1 回、
+活性は行スライス単位で変換され、インスタンス自身のバッファに入り、積は
+テンソルコア上の FP16 GEMM（fp32 アキュムレート）として走る。
+<strong>FP16 の範囲を超える有限値は Inf ではなく ±65504 にクランプする</strong>（#540）。
+beta = 1 の積（<code>STRATA_PREFILL_BF16X2</code> の残り、元の約 2⁻⁹、FP16 の非正規数帯の深部）だけは
+cuBLAS に残す。」</p>
+</blockquote>
+<p>既定値まで書いてある: compute capability 7.0–7.4 で ON、7.5（RTX 20）は<strong>和の丸めが変わる</strong>ので
+ゲートされるまで opt-in。Pascal（6.x）はテンソルコアが無く cuBLAS に BF16 GEMM も無い
+（#395、P40 で NOT_SUPPORTED 実測）ので、<strong>両オペランドを正確なシフトで fp32 に広げて <code>cublasSgemm</code></strong>。</p>
+<blockquote>
+<p><strong>このエンジンの一般則</strong>: 特定世代のハードで「ライブラリが静かに遅い経路に落ちる」場合、
+<strong>意味を保ったまま別の型に写して速い経路に乗せる</strong>。そのために「その写像が厳密である条件」を
+コメントに書く（ここでは「FP16 の正規範囲内」）。</p>
+</blockquote>
+<hr>
+<h2>3. MoE の int8 テンソルコア — magic float の完全な説明</h2>
+<p><code>moe_fused.cu</code> 冒頭は、このエンジンで一番美しいトリックを解説している。</p>
+<h3>3.1 代数</h3>
+<p>Q2_0 の 1 ブロックは 64 重み <code>w = d_w * (q - 1)</code>、<code>q ∈ 0..3</code>、1 バイトに 4 コード。
+活性の 32 値ブロックは <code>x = d_x * a</code>、<code>a = round(x / d_x) ∈ -127..127</code>。32 値の半ブロックで:</p>
+<pre><code>sum w x = d_w * d_x * ( sum q a - sum a )
+</code></pre>
+<blockquote>
+<p>「int8 の積はコードを<strong>そのまま</strong>取る（0..3 は有効な s8）。オフセットは活性自身の和で、
+ブロックと一緒に保存される。」</p>
+</blockquote>
+<h3>3.2 整数 → float を 1 命令で</h3>
+<blockquote>
+<p>「ドット積（|sum q a| ≤ 32·3·127 &lt; 2²²）は <strong>1 回の整数加算で厳密に float になる</strong>:
+<code>as_float(0x4B400000 + dot) = 1.5 * 2²³ + dot</code>。そしてブロックは
+<code>c = -(1.5 * 2²³ + sum a)</code> を保存する。だから
+<code>as_float(0x4B400000 + dot) + c = dot - sum a</code> が<strong>丸め無しで</strong>得られる。」</p>
+</blockquote>
+<p>なぜこれが成り立つか: IEEE754 の単精度で指数部が 2²³ 桁の値 <code>1.5 × 2²³ = 12,582,912</code> は、
+仮数部が 23 ビットなので <strong>整数を 1 ずつ正確に表現できる</strong>。そこに <code>dot</code> を足すと、
+下位 23 ビットがそのまま整数として入る。つまり「整数 → float 変換命令」を省いている。</p>
+<p>出力・64 ブロックあたり:</p>
+<pre><code>acc += d_w * (d_x0 * t0 + d_x1 * t1)      # t = 各半ブロックの dot - sum a
+</code></pre>
+<blockquote>
+<p>「整数加算 2、float 加算 2、積和 3。」</p>
+</blockquote>
+<h3>3.3 K の並び — mma の都合に合わせて「意味を張り替える」</h3>
+<blockquote>
+<p>「<code>mma.sync m16n8k32</code> は行（A）または列（B）の<strong>連続する 4 つの k</strong> を 1 レジスタに取る。
+連続する 4 重みは 1 コードバイト。<strong>だが 1 レジスタの 4 コードは代わりに、
+連続する 4 バイトの同じ 2 ビットフィールドから来る</strong> —
+<code>(word &gt;&gt; 2t) &amp; 0x03030303</code> は 16 重みワードの重み <code>t, t+4, t+8, t+12</code> を保持する。
+だからカーネルはこの順序を半ブロックの k に使う:
+<strong>mma の k 添字 <code>16h + 4t + j</code> は、重み（と活性）<code>16h + t + 4j</code> を意味する。</strong>」</p>
+</blockquote>
+<p>活性はその順に保存され（<code>perm32</code>）、レーンの 2 つの B レジスタ（h = 0 と 1）が隣接するので
+<strong>1 回の 8 バイトロード</strong>で済む。 → <a href="04_moe.html">04</a> の「組み替えるのは活性のほう」と同じ発想。</p>
+<h3>3.4 blob の形</h3>
+<pre><code>gate/up codes [1280][640 B]   （行が交互: 特徴 f の gate が行 2f、その up が行 2f+1）
+down    codes [2560][160 B]
+gate/up scales [1280][40] fp16
+down    scales [2560][10] fp16
+</code></pre>
+<p><strong>gate と up を交互に置く</strong>のが <a href="04_moe.html">04</a> の gate-major 修正の prefill 版。
+1 つの work item = 「expert e の最大 64 ルーティング行のタイル」×「256 重み行のブロック」で、
+<strong>永続グリッド</strong>がバッチの item を歩く（個数はデバイス上にある）。</p>
+<h3>3.5 i-quant 版 — コードブックを int8 に「復号してから」積む</h3>
+<p><code>moe_fused_iq.cu</code>（1215 行）は IQ 系を同じ枠組みに載せる。手順は:</p>
+<ol>
+<li>コードブックから<strong>重みを int8 に復号</strong>する（i-quant の各形式は「符号 + グリッド」なので復号可能）</li>
+<li>以降は Q2_0 と同じく int8 テンソルコア</li>
+</ol>
+<p>対応ブロックサイズ（<a href="02_quant.html">02</a> の再掲）:
+<code>iq2_xxs 66</code>, <code>iq2_xs 74</code>, <code>iq2_s 82</code>, <code>iq3_xxs 98</code>, <code>iq3_s 110</code>, <code>iq4_xs 136</code>, <code>q2_0 18</code>。</p>
+<p>つまり <strong>prefill は形式を吸収する層</strong>であり、decode の「3 つのコード幅」ほど単純ではないが、
+「復号 → int8 → テンソルコア」という 1 本の道に集約されている。</p>
+<h3>3.6 ggml MMQ をそのまま使う経路</h3>
+<p><code>moe_mmq.cu</code> は llama.cpp の MMQ（<code>ggml-cuda</code>、MIT）を<strong>ピン留めした checkout からコンパイル</strong>し、
+<code>ggml_cuda_host.cu</code>（147 行）が <code>ggml-cuda.cu</code> が参照する少数のホストシンボルを供給する。</p>
+<blockquote>
+<p>「Strata blob の Q2_0 ブロックは <code>{f16 d; 16 code bytes}</code> で、同じ順序の同じ 2 ビットコードを持つ。
+つまり<strong>ブロックは 1 スケールと 16 バイトのコード列</strong>である。」</p>
+</blockquote>
+<p>「自前実装を書く前に、参照実装がそのまま使えるなら使う」という判断。
+ただし<code>moe_fused.cu</code> の方が速い（自前のグループ化と融合があるため）ので、
+MMQ は<strong>比較対象とフォールバック</strong>の位置づけになっている。</p>
+<hr>
+<h2>4. RDNA3 の WMMA — ビルド定義でなければ動かない話</h2>
+<p><code>wmma_gemm.cu</code> のヘッダは <code>v_wmma_f32_16x16x16_f16_w32</code> などの intrinsic を使う。
+問題は「このコードが有効かどうかをどう判定するか」。</p>
+<blockquote>
+<p>「<code>STRATA_WMMA_GFX11</code> は<strong>ビルドが定義する</strong>（CMakeLists.txt、<code>CMAKE_HIP_ARCHITECTURES</code> から）。
+コンパイラマクロから推論してはいけない:
+<strong>このツールチェーンで実測したところ、HIP コンパイルのホストパスは <code>__gfx1100__</code> を定義しないが
+<code>__HIP_DEVICE_COMPILE__</code> は定義する。</strong> だからここでコンパイラマクロのガードを書くと、
+エンジンがリンクするまさにそのシンボルに対して、ファイル末尾の “return false” スタブが
+<strong>静かに選ばれる</strong> — WMMA 経路は決して走らず、同じファイルを hipcc で（プローブがそうするように）
+コンパイルすると実ブランチを取る。<strong>ビルド定義のマクロ 1 つなら、ホストパスとデバイスパスで一様。</strong>」</p>
+</blockquote>
+<p>これは「静かに機能しなくなる」系の最悪例: ビルドは成功し、テストも（WMMA を使わないテストなら）通り、
+性能だけが落ちる。</p>
+<p>タイル変種は 2 つ:</p>
+<table>
+<thead>
+<tr>
+<th>変種</th>
+<th>スレッド</th>
+<th>タイル</th>
+<th>特徴</th>
+</tr>
+</thead>
+<tbody><tr>
+<td><code>gemm_wmma_16x16_1w</code></td>
+<td>32（1 wave）</td>
+<td>16T × 16N × 16K</td>
+<td>LDS 0、バリア 0、全レジスタ常駐。小さい T/N 用</td>
+</tr>
+<tr>
+<td><code>gemm_wmma_64x64_4w</code></td>
+<td>128（4 wave）</td>
+<td>64T × 64N × 16K</td>
+<td>W 用 LDS 4 KB のダブルバッファ、128 ビット協調ロード</td>
+</tr>
+</tbody></table>
+<p>ウェーブ 32 のフラグメント配置も明記されている（レーン t は A の行 <code>t &amp; 15</code> と B の列 <code>t &amp; 15</code> を持ち、
+レーン 16..31 は 0..15 の複製、C は列 <code>t &amp; 15</code> の 16×16 タイルを 8 要素交互の行で持つ）。</p>
+<hr>
+<h2>5. <code>gemm.cu</code> — 地味だが危険な 3 つの話</h2>
+<h3>5.1 in-place の FP16 → FP32 拡張</h3>
+<blockquote>
+<p>「Y の行は FP16 出力 GEMM によって各 FP32 行の先頭に FP16 として書かれ（<code>ldc = 2 ldy</code> ハーフ）、
+その場で拡張される。float の c はハーフ 2c と 2c+1 を上書きするので、<strong>行はその終端から
+ブロック単位で歩く</strong>: ブロックのハーフをレジスタに読み、ブロックが同期し、それから float を書く —
+書くのは既に読んだブロックのハーフだけを覆う。」</p>
+</blockquote>
+<p>「同じバッファの上で型を変える」処理は、<strong>後ろから書く</strong>のが定石。</p>
+<h3>5.2 <code>STRATA_DBG_NAN</code></h3>
+<blockquote>
+<p>「STRATA_DBG_NAN: 有限でない FP16 出力（fp32 で蓄積した和が 65504 を超えると FP16 で inf になる）。」</p>
+</blockquote>
+<p>FP16 出力の GEMM は<strong>静かに inf を作る</strong>。だから専用のデバッグフラグがある。</p>
+<h3>5.3 Windows の hipBLAS が返す「成功したのにエラー」</h3>
+<blockquote>
+<p>「#247/#325: Windows（gfx1201 で観測）で、hipBLAS は一部の形状（T ≥ 96 で hc が 1 回、
+router）で正しい BF16/FP16 積を返しながら、<code>hipErrorInvalidValue</code> をセットしたままにできる。
+次のカーネルのエラー検査がそれを exit に変える。<strong>積は完了しているので、成功した GEMM の後で
+その古いエラーを 1 つだけクリアする</strong>。他のエラーは今まで通りエンジンを止める。
+Windows のみ: Linux では古い <code>hipErrorInvalidValue</code> は前の呼び出しからの本物のエラーであり、
+報告され続ける。」</p>
+</blockquote>
+<p><strong>「ライブラリのバグを、プラットフォームを限定して、理由を書いて回避する」</strong> —
+回避 code に理由と範囲が書かれていないと、後で全プラットフォームに広がって本当のバグを隠す。</p>
+<hr>
+<h2>6. <code>kernels.cu</code> — prefill の「融合」カタログ</h2>
+<p>2,214 行。prefill の注意機構・GDN・PLE・postops がここにあり、<strong>「同じビットのまま 2 つを 1 つにする」</strong>
+融合が並ぶ。読むときに覚えておくべき原則は decode と同じ:</p>
+<blockquote>
+<p><strong>bits が同じであることを証明できる融合だけが既定で ON になる。</strong></p>
+</blockquote>
+<h3>6.1 ハイパーコネクション（GR）系</h3>
+<table>
+<thead>
+<tr>
+<th>融合</th>
+<th>内容</th>
+</tr>
+</thead>
+<tbody><tr>
+<td>F-1</td>
+<td>行スケールと BF16 イメージだけ書く。<code>gr_mix_r_kernel</code> が <strong>r × rs × w を自分で同じ順で再計算</strong>するので、正規化行の FP32 コピー（T × 10240 float）を書かず読まない</td>
+</tr>
+<tr>
+<td>F-2</td>
+<td><code>gr_write_kernel</code>（1 行 1 スレッド (t,c)）と <code>gr_norm_rs_kernel</code> の縮約を融合。<strong>同じスレッド→要素の対応</strong>（256 スレッド、ストライド 256）と同じ <code>block_sum</code> なので rs と BF16 イメージが同じビット、R を読み戻さない</td>
+</tr>
+<tr>
+<td>S23 <code>STRATA_CVEC_FUSE=1</code></td>
+<td>steered 層の FFN 書き込み + 制御ベクトル + 次のハーフの norm を <strong>R 上の 1 パス</strong>で（元は gr_write + cvec_apply + gr_norm_rs の 3 つ）。書き込みは gr_write_kernel の、ベクトルは cvec_kernel の（d = tid + 256k 上の同じスレッド毎ドット順、同じ 2 段 xor 縮約）、norm は gr_norm_rs_kernel の（同じ ss 順と block_sum）→ 同じビット</td>
+</tr>
+</tbody></table>
+<h3>6.2 GDN 系</h3>
+<table>
+<thead>
+<tr>
+<th>融合</th>
+<th>内容</th>
+</tr>
+</thead>
+<tbody><tr>
+<td>C-3</td>
+<td>同じ 4 タップ因果 conv を<strong>トークンでタイル化</strong>: スレッド (c, tile) が自分のタイルの 3 つの先行入力をチャンク（またはその前の履歴）から読む。conv は入力を読むのであって自分の出力を読まない → タイルは独立、要素ごとに同じ式（同じビット）、履歴は後で書く</td>
+</tr>
+<tr>
+<td>Aurora S23 <code>STRATA_GDN_CONVL2=1</code></td>
+<td><code>gdn_conv_tiled_kernel</code> に <code>gdn_l2_kernel</code> を折り込む。<strong>ブロックの 128 スレッド = 1 ヘッドの 128 チャネル</strong>なので、q / k ヘッド（block &lt; 2·HK）では norm の二乗和がブロックのそれになる: 同じ <code>warp_sum</code>、同じ 4 つの部分和を同じ順で加算、同じ格納値に対する同じ <code>v * rsqrtf(ss + eps)</code> → 同じビット、しかも h を書いて読み戻さない（16 トークン/ラウンド）</td>
+</tr>
+<tr>
+<td>D-2</td>
+<td>再帰の<strong>値列を 1 ヘッドあたり 4 ブロックに分割</strong>（上のカーネルの 4 倍のブロック数）</td>
+</tr>
+<tr>
+<td><code>gdn_history_advance</code></td>
+<td>チャンク後の履歴（最後の 3 入力。チャンクが 3 より短ければより古い履歴）</td>
+</tr>
+</tbody></table>
+<h3>6.3 PLE（28.8 GB の n-gram テーブル）</h3>
+<p>PLE は <strong>SSD 上 28.8 GB の n-gram テーブル</strong>で、トークンごとに数行だけを<strong>非バッファ（unbuffered）読み</strong>する。
+<code>--ple-io direct</code> が既定（<a href="01_memory.html">01</a>）。prefill でもチャンク全体でその行集合を引くが、
+<strong>テーブル本体は GPU に載らない</strong>（載せたら VRAM が終わる）。GPU 側の演算は
+<code>ple.cu</code> / <code>native_ple_postops.cu</code>（<a href="07_misc.html">07</a> で詳述）が担う。</p>
+<hr>
+<h2>7. 数値契約を守るための専用ハーネス</h2>
+<p>prefill には <strong>parity（一致）専用の実行ファイル</strong>が 2 本ある。製品コードではなく、<strong>契約の証明</strong>。</p>
+<table>
+<thead>
+<tr>
+<th>ファイル</th>
+<th>行</th>
+<th>何を突き合わせるか</th>
+</tr>
+</thead>
+<tbody><tr>
+<td><code>gdn_rec_parity.cu</code></td>
+<td>1,383</td>
+<td>GDN 再帰の <strong>chunked prefill 経路 vs 逐次 decode 経路</strong>。トークン毎の演算を同じ順序で書き写してあるので、prefill のチャンク計算が plain decode とビット一致することを検証できる</td>
+</tr>
+<tr>
+<td><code>gemm_bf16_parity.cu</code></td>
+<td>155</td>
+<td>BF16 GEMM の各経路（cuBLAS / FP16 経由 / SIMT フォールバック）の一致</td>
+</tr>
+</tbody></table>
+<p>これがあるから「prefill は速い経路、decode は別経路」という<strong>二重実装</strong>が成立している。
+ハーネスが無ければ、二重実装は必ずどこかで食い違う。</p>
+<hr>
+<h2>8. この章のまとめ — decode と prefill の対比</h2>
+<table>
+<thead>
+<tr>
+<th>観点</th>
+<th>decode（<a href="03_decode_gemv.html">03</a>–<a href="05_attention_gdn.html">05</a>）</th>
+<th>prefill（本章）</th>
+</tr>
+</thead>
+<tbody><tr>
+<td>律速</td>
+<td><strong>帯域</strong>（38 GiB パックを毎トークン読む）</td>
+<td><strong>計算</strong>（8,192 トークンを一気に）</td>
+</tr>
+<tr>
+<td>GEMM</td>
+<td>自前 GEMV（<code>s_gemv</code> 系）、1 トークン</td>
+<td>ベンダー GEMM / WMMA / 自前 int8 MoE</td>
+</tr>
+<tr>
+<td>量子化</td>
+<td>その場で復号しながら積む（Q8_0 / Q8_K 活性）</td>
+<td>BF16 / FP16 に写す、または int8 テンソルコア（magic float）</td>
+</tr>
+<tr>
+<td>expert</td>
+<td>必要なら CPU プールで並行計算</td>
+<td>PCIe でストリーム（リングはバイト単位）</td>
+</tr>
+<tr>
+<td>融合</td>
+<td>doorbell で GPU/CPU を重ねる</td>
+<td>同一ビットの証明できる融合だけ</td>
+</tr>
+<tr>
+<td>検証</td>
+<td><code>*_parity</code> カーネル</td>
+<td><code>gdn_rec_parity</code> / <code>gemm_bf16_parity</code></td>
+</tr>
+</tbody></table>
+<h3>読者チェックリスト</h3>
+<ol>
+<li>なぜ prefill だけ別実装なのか（律速が違う → 最適解が違う）を説明できるか</li>
+<li><code>as_float(0x4B400000 + dot)</code> が<strong>なぜ丸め無しで整数→float になる</strong>か導けるか</li>
+<li>mma の k 添字 <code>16h + 4t + j</code> が重み <code>16h + t + 4j</code> を意味する理由を言えるか</li>
+<li>BF16 → FP16 の写像が<strong>どこで厳密で、どこでクランプが要る</strong>か</li>
+<li><code>STRATA_WMMA_GFX11</code> をコンパイラマクロから取ってはいけない理由</li>
+<li>in-place の FP16 → FP32 拡張が<strong>なぜ行の終端から</strong>書くのか</li>
+<li>「Windows だけ古いエラーを消す」がなぜ安全と言えるのか</li>
+<li>parity ハーネスが無いと二重実装はなぜ破綻するか</li>
+</ol>
+</article><div class="pager"><a href="05_attention_gdn.html">← 05. 注意機構と GDN — 「選ぶ」attention と、「状態」の再帰</a><span><a href="07_misc.html">07. その他のホットスポット — sampler / verify / PLE / GR / ランタイム →</a></span></div><footer><p>出典: github.com/Niko1221/Strata HEAD 61b3fb5（v0.1.49）／ 本文中の行番号・定数はこのリビジョンのもの。図は同梱 PNG（2 倍解像度）。</p></footer></div></body></html>

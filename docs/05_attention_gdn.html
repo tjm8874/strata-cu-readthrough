@@ -1,0 +1,401 @@
+<!doctype html><html lang="ja"><head><meta charset="utf-8"><meta name="viewport" content="width=device-width,initial-scale=1"><title>05. 注意機構と GDN — 「選ぶ」attention と、「状態」の再帰</title><style>:root{--cyan:#00f0ff;--mag:#ff2a6d;--acid:#d6ff2e;--ink:#07090d;--panel:#0b1119;--line:#1d2a36;--txt:#c9d4e0;--dim:#95a9bd;--lbl:#ffe066}
+*{box-sizing:border-box}
+html,body{margin:0;background:var(--ink);color:var(--txt);font-family:"JetBrains Mono","SF Mono",ui-monospace,Menlo,monospace;font-size:14px;line-height:1.85}
+body::before{content:"";position:fixed;inset:0;pointer-events:none;z-index:9;background:repeating-linear-gradient(180deg,rgba(0,240,255,.04) 0 1px,transparent 1px 4px)}
+.wrap{max-width:880px;margin:0 auto;padding:28px 24px 80px;position:relative;z-index:10}
+.nav{display:flex;justify-content:space-between;gap:12px;font-size:13px;border-bottom:1px solid var(--line);padding-bottom:10px;margin-bottom:26px}
+.nav a{color:var(--dim);text-decoration:none;border-bottom:1px solid transparent}
+.nav a:hover{color:var(--cyan);border-color:var(--cyan)}
+h1{font-size:23px;line-height:1.5;color:var(--cyan);letter-spacing:1px;margin:6px 0 18px;text-shadow:0 0 16px rgba(0,240,255,.35)}
+h2{font-size:17px;color:var(--lbl);margin:34px 0 10px;padding-left:10px;border-left:3px solid var(--mag);line-height:1.6}
+h3{font-size:15px;color:var(--acid);margin:24px 0 8px}
+p{margin:12px 0}
+a{color:var(--cyan)}
+strong{color:var(--lbl)}
+code{background:#12202b;color:var(--acid);padding:1px 5px;border:1px solid var(--line);font-size:13px;word-break:break-word}
+pre{background:#05080c;border:1px solid var(--line);padding:14px 16px;overflow-x:auto;font-size:13px;line-height:1.65}
+pre code{background:none;border:0;padding:0;color:#d7e6f2;font-size:13px}
+blockquote{margin:16px 0;padding:10px 16px;border-left:3px solid var(--cyan);background:rgba(0,240,255,.05);color:var(--txt)}
+blockquote p{margin:4px 0}
+table{border-collapse:collapse;width:100%;margin:16px 0;font-size:13px;display:block;overflow-x:auto}
+th,td{border:1px solid var(--line);padding:7px 10px;text-align:left;vertical-align:top}
+th{background:#101c26;color:var(--lbl);white-space:nowrap}
+tr:nth-child(even) td{background:#0a1219}
+ul,ol{padding-left:22px}
+li{margin:5px 0}
+hr{border:0;height:1px;background:linear-gradient(90deg,var(--cyan),var(--mag) 60%,transparent);margin:30px 0}
+.figrow{display:flex;flex-wrap:wrap;gap:12px;margin:18px 0}
+.figlink{display:block;flex:1 1 320px;text-decoration:none;background:#05080c;border:1px solid var(--line);padding:8px}
+.figlink img{width:100%;display:block}
+.figcap{display:block;font-size:13px;color:var(--lbl);font-weight:700;margin-top:6px}
+footer{margin-top:44px;padding-top:14px;border-top:1px solid var(--line);font-size:13px;color:var(--dim)}
+footer a{color:var(--dim)}</style></head><body><div class="wrap"><div class="nav"><a href="../index.html">← 目次 / 図一覧</a><span>STRATA 読解 05 / 08</span></div><article><h1>05. 注意機構と GDN — 「選ぶ」attention と、「状態」の再帰</h1>
+<blockquote>
+<p>対象: <code>src/kernels/cuda/qsa.cu</code>（821）、<code>qsa_select.cu</code>（1365）、<code>qsa_decode_attn.cu</code>（758）、
+<code>qsa_prompt_attn.cu</code>（1525）、<code>native_qsa_indexer.cu</code>（308）、<code>native_qsa.cu</code>（167）、<code>native_flash_attn.cu</code>（212）、
+<code>gdn.cu</code>（248）、<code>fused_gdn.cu</code>（166）、<code>native_gdn*.cu</code>、<code>verify_kernels.cu</code>（1357）、
+<code>cvec.cu</code>（174）、<code>kv_q8.cu</code> / <code>kv_q4.cu</code> / <code>kv_stream.cu</code>（286）</p>
+</blockquote>
+<div class="figrow"><a class="figlink" href="../diagrams/png/kv-cache.png"><img src="../diagrams/png/kv-cache.png" alt="05 KV キャッシュ 3 層 — ページ配置と write/read 経路"><span class="figcap">05 KV キャッシュ 3 層 — ページ配置と write/read 経路</span></a></div><p>Qwen3.8-Flash-Next の 48 層は <strong>2 種類の mixer</strong> の混成である。</p>
+<table>
+<thead>
+<tr>
+<th>mixer</th>
+<th>層数（このエンジンの記述）</th>
+<th>状態</th>
+<th>カーネルの性格</th>
+</tr>
+</thead>
+<tbody><tr>
+<td><strong>QSA</strong>（full attention + indexer で sparse 選択）</td>
+<td>12</td>
+<td>KV cache（トークンごとに増える）</td>
+<td>選ぶ・集める・softmax</td>
+</tr>
+<tr>
+<td><strong>GDN</strong>（gated delta-net）</td>
+<td>残り</td>
+<td>固定サイズの再帰状態（増えない）</td>
+<td>再帰・正規化・ゲート</td>
+</tr>
+</tbody></table>
+<hr>
+<h2>1. QSA の分割 — 射影は「外」、その間だけがここ</h2>
+<p><code>include/strata/kernels/qsa.hpp</code> が 7 つの役割を列挙している:</p>
+<pre><code>kv_append            新しいトークンの K と V をページドキャッシュへ
+indexer_key_append   indexer の生テールと、ブロック完成時に発火するプーリング
+qsa_index            【セル単位】の indexer スコア: ヘッドごとに Relu、ヘッド和、+bias、cell_block で写像
+topk_512             選択: 上位 `width` セル、同値は index 昇順、昇順で返す
+kv_gather            選ばれたセルを【ページテーブル経由】で連続スクラッチへ
+qsa_attend           スクラッチ上の softmax GQA
+qsa_gate_apply       `attn * sigmoid(gate)` と、attn_output が消費する fp16 活性への丸め
+</code></pre>
+<p>射影（<code>attn_q</code>/<code>attn_k</code>/<code>attn_v</code>/<code>attn_output</code>/<code>indexer.q_proj</code>/<code>indexer.k_proj</code>）は
+既存の <code>s_gemv</code>/<code>s2_gemv</code> そのもの。ここにあるのは<strong>その間のすべて</strong>。</p>
+<blockquote>
+<p><strong>スコープ宣言</strong>: 「DECODE ONLY、そしてこれは省略ではなく意図的なスコープ表明である。
+<code>ref/qsa.py::indexer_scores</code> は mask 引数を持たず、理由を書いている:
+“マスクの因果部分は既に満たされている。キャッシュされた全セルは decode のクエリより前にある。”
+プランの <code>qsa_index</code> は “block-causal mask” を要求するが、decode でのその中身は
+テール → スペアスロットの写像（<code>cell_block</code>）だけであり、それはここで実装・テスト済み。
+<strong>decode が exercise できない mask フラグを足すのは、観測可能な振る舞いを持たない引数であり、
+このプロジェクトは既に「主張する対象を見られないチェック」に噛まれている。</strong>」</p>
+</blockquote>
+<hr>
+<h2>2. KV cache — ページドで fp16、そして「写像を仮定してはいけない」</h2>
+<h3>2.1 レイアウト</h3>
+<pre><code>K/V CACHE: FP16, paged, [page][kv_head][page_size][head_dim]  (head_dim が最速)
+</code></pre>
+<p>論理セル <code>t</code>、ヘッド <code>h</code> の物理行は:</p>
+<pre><code>page = table[t / page_size]
+physical_row = (page * n_head_kv + h) * page_size + (t % page_size)
+</code></pre>
+<blockquote>
+<p>「つまり<strong>1 ヘッド分の連続セルがページ内で連続している</strong>。これが attention の欲しい性質。
+代替案（ページ内セル優先）はセルの 2 ヘッドが連続になり、<code>kv_append</code> が欲しい性質だが、
+価値はまったく劣る。」</p>
+</blockquote>
+<p>そして fp16 を選ぶ理由が具体的な数字で書かれている:</p>
+<blockquote>
+<p>「プランは “FP16 first” と言い、fp16 は 32K 文脈を収める理由でもある:
+<strong>12 層 × 2 ヘッド × 256 次元 × 2（K と V）× 2 B × 32,768 = 805 MiB</strong>、f32 なら 1.6 GiB。」</p>
+</blockquote>
+<p><strong>「写像を仮定してはいけない」</strong>:</p>
+<blockquote>
+<p>「このヘッダの外はこの写像を仮定してはならない。<code>qsa_attend</code> は集めたスクラッチを読み、
+プールは決して読まない。テストは同じフィクスチャを page_size 1, 4, 512 で、ページテーブルを
+置換して走らせ、<strong>attention 出力が同一であること</strong>を要求する。だから粒度が結果に漏れない。」</p>
+</blockquote>
+<h3>2.2 3 階層の KV（<a href="01_memory.html">01</a> の再掲）</h3>
+<pre><code>VRAM ホット（直近 64K 相当）─── kv_q8.cu / kv_q4.cu（fwht256 回転して int8/4bit 圧縮）
+        │ 溢れ
+        ▼
+ホスト側ミラー（pinned）─── kv_stream.cu のリング（copy/reset/ring）
+        │ 先読み
+        ▼
+KV_PREFETCH で必要セルを先に戻す
+</code></pre>
+<p><code>cvec.cu</code> の <code>fwht256</code> は <strong>Hadamard 回転</strong>。int8 に落とす前に回転すると外れ値が分散し、
+量子化誤差が減る。<code>kv_q8</code> は 32 要素ブロックの対称量子化。</p>
+<hr>
+<h2>3. Indexer — 「どのセルを見るか」を決める 2 段目の attention</h2>
+<p>QSA の面白さはここ。全セルに attention するのではなく、<strong>軽量な indexer で候補セルを選び</strong>、
+そのセルだけに本気の attention をする。</p>
+<ul>
+<li>セルスコア = <strong>4 つの indexer ヘッドそれぞれで relu(q·k)、その和</strong> + bias</li>
+<li>indexer のキーは <strong>FP32</strong>（fp16 でもプランの INT8 でもない）— 契約にトレランスが無いから</li>
+<li>キーは 4 セルごとに<strong>プール</strong>され、ブロック完成時に 1 回だけ発火する（<code>indexer_key_append</code>）</li>
+<li>プール演算は <strong>double で順序固定</strong>（後述の事件）</li>
+</ul>
+<blockquote>
+<p>「これらは契約のどこにもトレランスを持たない: <code>docs/capture-format.md</code> L127 が
+<code>indexer_ids</code> を <strong>EXACT キー</strong>にしている。<strong>選ばれたセルが違えば attention の入力が違う</strong>から。」</p>
+</blockquote>
+<h3>3.1 選択はソートではなく「閾値探索」</h3>
+<blockquote>
+<p>「<code>topk_512</code> の閾値探索はソートではない。選択はマスク済みセルスコア上の <code>ggml_top_k</code> を、
+参照の同値規則（index 昇順）で再現しなければならず、<strong>厳密</strong>でなければならない。
+カーネルは <code>width</code> 番目に大きいスコアを <strong>32 ビットの“順序キー”としてバイナリリフティングで求める</strong>
+（32 回の単調パス、<code>count(key &gt;= cand) &gt;= width</code>）。そして<strong>1 回の昇順走査</strong>で、
+厳密にそれより大きい全セルと、それに等しい最初の <code>width - c_gt</code> セルを出力する。
+これは (score desc, index asc) でソートして先頭 <code>width</code> を取るのと<strong>証明可能に同じ集合</strong>で、
+スクラッチもソートも要らず、決定的である。」</p>
+</blockquote>
+<p><code>kTopkMaxCells</code> の存在理由も書いてある: 「選択全体が<strong>1 ブロック</strong>で走るので、昇順走査が
+2 回目のグローバルパスではなくチャンク化スキャンで済む」。n_ids は最大 2,051。</p>
+<h3>3.2 位相幾何の進化 — 4 世代のスコアラ</h3>
+<table>
+<thead>
+<tr>
+<th>実装</th>
+<th>条件</th>
+<th>手法</th>
+<th>実測</th>
+</tr>
+</thead>
+<tbody><tr>
+<td><code>block_scores_kernel</code></td>
+<td>基本</td>
+<td>ワープ、4 積あたり 5 shuffle</td>
+<td>RTX 2080 Ti で約 1 TFLOPS</td>
+</tr>
+<tr>
+<td><code>block_scores_tc_kernel</code></td>
+<td>sm_80+</td>
+<td><strong>3xTF32</strong>（hi<em>hi + hi</em>lo + lo*hi）</td>
+<td>FP32 級精度</td>
+</tr>
+<tr>
+<td><code>block_scores_wmma_kernel</code></td>
+<td>gfx11/gfx12</td>
+<td>bf16 を <strong>3 分割</strong>（仮数上位 8/中 8/下 8 ビット）</td>
+<td>6 項、小さい順に加算</td>
+</tr>
+<tr>
+<td>FP32 タイル GEMM</td>
+<td>sm_80 未満</td>
+<td>2 クエリ × 4 ヘッド × 4 ブロック/スレッド</td>
+<td><strong>約 6.9 TFLOPS</strong>（4.5〜6.8 倍）</td>
+</tr>
+</tbody></table>
+<p>いずれも「和の順序がワープカーネルと違うので、スコアが最下位ビットで動き、near-tie で
+選択が変わることがある（ビット一致ではない）」。その代わり<strong>選択規則そのもの</strong>は全実装で同じ。</p>
+<h3>3.3 クラスタで top-k（S19、sm_90+）</h3>
+<blockquote>
+<p>「1 CTA/クエリの top-k（<code>block_topk_reg_kernel</code>）は、最大 65,538 ブロックに対して
+4 回の基数パスと 2 回のスキャンを <strong>1 つの SM</strong> で行い、残りの GPU は遊んでいる —
+decode ウィンドウは 1〜5 クエリしかないのに。」</p>
+</blockquote>
+<p>解決は <strong>分散共有メモリ</strong>への push:</p>
+<blockquote>
+<p>「<code>CL_N</code> CTA のクラスタが 1 クエリを共有する。CTA r はブロック <code>[r*per, (r+1)*per)</code> のキーを
+shared に持ち、その桁ヒストグラムを作り、<strong>全 CTA の <code>hin</code> のスロット r に push する</strong>
+（分散共有メモリ）。クラスタバリア 1 回の後、各 CTA が <code>CL_N</code> スロットを自分で合計するので、
+全 CTA が同じ桁を取る。」</p>
+</blockquote>
+<p>実測（RTX 5070、容量 = 文脈長、<code>decode_cluster_parity --bench</code>）:</p>
+<pre><code>  32K : 21.9 → 15.6 us
+  128K: 58   → 18   us
+  262K: 200  → 22   us
+</code></pre>
+<blockquote>
+<p>「<strong>同一の ID を、運ではなく構成で得る</strong>: 閾値 <code>thr</code>（weight 付きで数えた width 番目のキー）と
+<code>above</code>（より大きいキーを持つセル）は (key, weight) の多重集合の純関数であり、
+整数ヒストグラムはどの順で合計しても同じ。」</p>
+</blockquote>
+<hr>
+<h2>4. 「この API はまだ capture できない。そして、どの部分ができないかは自明ではない」</h2>
+<p>これは全 46 ファイル中で最も重要な設計文書かもしれない。<code>qsa.hpp</code> の監査記録。</p>
+<blockquote>
+<p>「<strong>CUDA graph は capture 時にカーネル引数を焼き込む。したがってトークンごとに変わる引数は、
+リプレイ時に最初のトークンの値で凍結される — 静かに。graph は走り続け、有限の出力を出し続け、
+正しく見え続けるからだ。</strong>」</p>
+</blockquote>
+<p>ヘッダをこの性質で監査したところ（round 211–212）、<strong>1 箇所ではなく 5 つのエントリポイント</strong>が見つかった:</p>
+<pre><code>kv_append           int64_t pos      毎トークン     新しいセルの位置
+qsa_index           int64_t n_bid    毎トークン     完成したブロック数
+qsa_index           int64_t n_kv     毎トークン     キャッシュ済みセル数
+topk_512            int64_t n_kv     毎トークン
+kv_gather           int64_t n_ids    毎トークン     = qsa_selection_width(n_kv, s)
+qsa_attend          int64_t n_ids    毎トークン
+indexer_key_append  int64_t pos      固定           → `const int32_t* pos_dev` を取るように変更済み
+</code></pre>
+<blockquote>
+<p>「<strong>capture された層が実際に何をするかは、クラッシュより悪い</strong>: <code>kv_append</code> は全トークンを
+位置 0 に書き、<code>qsa_index</code> と <code>topk_512</code> はちょうど 1 セルだけを採点し、<code>kv_gather</code> は 1 セルを
+集め、attention は全系列にわたって単一セル上で走る。<strong>有限で、もっともらしく、
+“モデルに文脈が無い” と区別がつかない</strong> — KV キャッシュか、選択か、重みのせいにされる症状だ。」</p>
+</blockquote>
+<p><strong>修正は 6 つのシグネチャではなく、1 つのデバイスバッファ</strong>:</p>
+<pre><code>step[0] = pos                    step[1] = n_kv = pos + 1
+step[2] = n_bid                  step[3] = width = qsa_selection_width(n_kv, s)
+</code></pre>
+<blockquote>
+<p>「これらはすべて現在位置と形状の純関数なので、トークンごとに 1 回書かれる小さな
+デバイス常駐の step 状態に属する。各カーネルが必要なエントリを読み、<strong>全引数リストが
+トークン間で定数になり、QSA 経路全体が capture できる</strong>。6 つの別ポインタ引数として書けば、
+忘れる場所が 6 つできて、チェックする 1 つのものも無くなる。」</p>
+</blockquote>
+<blockquote>
+<p><strong>教訓</strong>: 「静かに間違える」系の設計不変条件は、パラメータを<strong>減らす</strong>方向に直す。</p>
+</blockquote>
+<hr>
+<h2>5. attention 本体</h2>
+<h3>5.1 <code>qsa_attend</code> — 1 ブロック 1 ヘッド、スコアは shared</h3>
+<blockquote>
+<p>「n_ids は 2,051 に達するので、ヘッドあたりのスコアベクトルは 8 KB、24 ヘッドで 24 ブロック:
+attention 全体が 24 ブロック × 256 スレッドという小さなグリッドになる。だがそれは
+ソースが使う形（クエリヘッドあたり 1 フラッシュタイル）でもあり、<strong>softmax の 3 パスを
+グローバルではなく shared 上で回せる</strong>。」</p>
+</blockquote>
+<ul>
+<li>スコアループ: <strong>1 スレッド = 1 セル</strong>、256 次元を順に歩く（half2 の 16 バイトベクトル化が効く）</li>
+<li>値ループ: <strong>1 スレッド = 1 次元</strong>、セルを歩く（ワープ幅の読みがセル内で連続）</li>
+<li>どちらも「gather が作るレイアウトに合った合体」</li>
+</ul>
+<h3>5.2 decode 用と prompt 用は別カーネル</h3>
+<table>
+<thead>
+<tr>
+<th>ファイル</th>
+<th>用途</th>
+<th>手法</th>
+</tr>
+</thead>
+<tbody><tr>
+<td><code>qsa_decode_attn.cu</code></td>
+<td>1〜数クエリ</td>
+<td><code>load8_f16/q8/q4</code> の 8 要素ロード、<code>attn_chunk_kernel</code></td>
+</tr>
+<tr>
+<td><code>qsa_prompt_attn.cu</code></td>
+<td>prefill のチャンク</td>
+<td><code>mma16816</code>（int8 テンソルコア）、<code>prompt_attn_i8_kernel</code>、<code>mma884</code></td>
+</tr>
+<tr>
+<td><code>native_flash_attn.cu</code></td>
+<td>GDN 層でない場合の汎用</td>
+<td>llama.cpp fattn-vec の特化（D=256, ncols=1, F16/F16）</td>
+</tr>
+</tbody></table>
+<hr>
+<h2>6. 数値の事件簿 — この章の主役は 2 つ</h2>
+<h3>6.1 <code>__float2half</code> が 1.0 を 0x3C01 にした（round 193）</h3>
+<blockquote>
+<p>「<code>__float2half</code> は使わない。<code>f16_bits.hpp</code> の <code>f16_from_f32</code> を使う。
+round 193 が記録した理由: <strong><code>__float2half</code> は 0x26DB に対して 0x2600 を、
+厳密な 1.0 に対して 0x3C01 を返した。</strong>」</p>
+<p>「パリティテストは、numpy の float16 が生成したベクトルに対してこの変換器を検査する。
+<strong>コードを共有しないオラクル</strong>だから意味がある。」</p>
+</blockquote>
+<p>1.0 が 0x3C00 ではなく 0x3C01 になる、というのは「1 ulp ずれる」話ではなく
+「変換器の実装が壊れている」話。それでもモデルは動く（わずかに数値が違うだけ）。
+だから「オラクルを持つ」ことが唯一の防御になる。</p>
+<h3>6.2 <code>__dadd_rn</code> と書いたつもりで <code>__fadd_rn</code> を呼んでいた</h3>
+<blockquote>
+<p>「プーリング演算は double で順序固定。<code>pooled</code> とスペアキーは参照と<strong>ビット厳密</strong>に比較される。
+そのためには両側で同じ和の順序が要る: <code>r</code> 個の生キーはセル順に足し、二乗和は d = 0..idx_dim-1 を
+順に走らせ、<code>__dadd_rn</code>/<code>__dmul_rn</code> が <strong>FMA 縮約を阻止する</strong>（さもないと <code>ss + m*m</code> が
+中間丸め無しの 1 演算に融合し、ホストから 1 ulp 離れる）。</p>
+<p><strong>これらの名前の <code>d</code> は見た目の話ではない。</strong> 最初の版は <code>__fadd_rn</code>/<code>__fmul_rn</code> —
+<strong>単精度の intrinsic</strong> — を書いていた。コンパイラは各 double オペランドを float に変換し、
+そちらで演算し、戻していた。つまりプーリングの算術全体が単精度で走っていた:
+<code>ss</code> は float 精度しか持たず（デバイスで 121.82236480712891、参照で 121.82236342931094）。</p>
+<p><strong>妥当なトレランスでは全比較が通っていた</strong>（スペアキーは 0.4 f32 ulp の違い）。
+<strong>ビット厳密なアサーションと、中間値の完全精度プローブだけがそれを見つけた。</strong>」</p>
+</blockquote>
+<blockquote>
+<p>これがこのファイルで「両方を残す」最も強い論拠だと書かれている。</p>
+</blockquote>
+<hr>
+<h2>7. GDN — バリアが 1 つも要らない再帰</h2>
+<pre><code class="language-cpp">// src/kernels/cuda/gdn.cu - See include/strata/kernels/gdn.hpp for the state layout (S, h_v, S) and for
+// why the recurrence needs no barrier at all: every line of it touches only one (j, h) column,
+// so one thread owns a column end to end.
+</code></pre>
+<p><strong>「再帰の各行は 1 つの (j, h) 列にしか触れないので、スレッド 1 本が列を端から端まで所有する。
+だからバリアが要らない。」</strong> 状態は (S, h_v, S) = 128 × 48 × 128。</p>
+<h3>7.1 GDN の演算順（<code>ref/gdn.py</code> の写し）</h3>
+<pre><code>qkv   = wqkv @ x                       # 10240 = q|k|v、ヘッド幅 128
+conv  = 畳み込み(qkv)
+s     = SiLU(conv)                     # ★ 分割【前】の conv 出力全体に SiLU
+q, k  = l2_norm(s_q), l2_norm(s_k)     # ★ v は正規化しない
+beta  = sigmoid(wbeta @ x)
+gate  = softplus(walpha @ x + dt) * ssm_a
+状態更新（再帰）
+o     = rms_norm(state_out, ssm_norm) * sigmoid(z)    # ★ SIGMOID。SiLU ではない
+y     = ssm_out @ o
+</code></pre>
+<blockquote>
+<p><strong>★印は、間違えても形が合ってしまい、しかも動く箇所</strong>。SiLU を分割後に適用してもテンソルの形は同じ。
+v を正規化しても形は同じ。<code>sigmoid(z)</code> を SiLU にしても形は同じ。
+だからこそ <code>docs/semantics.md</code> に意味論として書かれ、parity テストで固定されている。</p>
+</blockquote>
+<p>q のスケール <code>1/sqrt(S)</code> は<strong>呼び出し側が正規化の後に</strong>掛ける。ここは参照と実装で順序が違うので、
+「どちらが正しいか」ではなく「どちらに合わせるか」を決めて書いておく必要がある（この実装は参照に合わせる）。</p>
+<h3>7.2 22 行のコメントが 3 つのファイルに分かれている理由</h3>
+<p><code>fused_gdn.cu</code>（166 行）は複数の段を融合した版、<code>native_gdn_preprocess.cu</code>（199）は
+conv_silu / l2_norm / beta_sigmoid / gate_softplus / out_norm を個別に、
+<code>native_gdn.cu</code>（122）は最小構成を持つ。<strong>融合版と分離版の両方があるのは、
+「速い版」と「検証できる版」を両立させるため</strong>。パリティテストは分離版を参照にする。</p>
+<hr>
+<h2>8. verify — 投機的検証のための「窓」カーネル</h2>
+<p>MTP 層が最大 3 トークンを下書きし、1 パスで全部を検査する（<a href="00_overview.html">00</a> の 3 モード）。
+そのためには<strong>複数トークン分を同時に</strong> GDN の再帰に通す必要がある。</p>
+<blockquote>
+<p>「ここにある各カーネルのトークンあたりの算術は、単一トークンのオリジナル
+（<code>fused_gdn.cu</code>、<code>elementwise.cu</code>）から<strong>同じ演算順で</strong>書き写されている。
+だから verify 窓は素の decode を<strong>ビット単位で再現する</strong>。」</p>
+</blockquote>
+<h3>8.1 状態コミットは「出力を捨てる」ことで速くなる</h3>
+<blockquote>
+<p>「状態のみのコミットカーネル: 各ヘッドの 128 個の独立した状態列を <strong>4 ブロック × 32 列</strong>に分割する
+（全 SM で <strong>48 × 4 = 192 ブロック × 128 スレッド</strong>、対して 48 ブロック × 512 スレッド）。
+sq/o/norm/z/y の仕事はしない。</p>
+<p>旧版は 1 ヘッドにつき 512 スレッドの 1 ブロック（32 ブロック）で走り、
+<strong>層の 2 MB の状態を約 60 GB/s で読んでいた</strong>。」</p>
+</blockquote>
+<p>32 ブロックでは SM を埋められない、という <a href="04_moe.html">04</a> と同じ構図。</p>
+<h3>8.2 罠: 正しすぎる最適化は 1 ulp を落とす</h3>
+<blockquote>
+<p>「S26: <code>OUT = false</code>（コミット。出力を誰も読まない）は出力の縮約とそのバリア 2 つを落とす。
+下の norm カーネルは旧カーネルの<strong>コード形状</strong>（S × RG スレッド、rg 0 が oc を持つ）を持つので
+ビット一致になる — <strong>128 スレッド版は旧カーネルと約 7% の出力で 1 ulp 違った。</strong>」</p>
+</blockquote>
+<p>「同じ計算を、別のスレッド配置で」は一致しない。<strong>形状を保つことがビット一致の条件</strong>。</p>
+<h3>8.3 先読みで 12% 速く、出力を付けると失われる</h3>
+<blockquote>
+<p>「S26: 状態のみのリプレイ（コミット）で、トークンごとの入力を先読みする — gate、beta、
+各行の v 列を先に、次の行の k / q は現在の行が計算している間に。
+算術と順序は <code>gdn_step_split_kernel&lt;false&gt;</code> のもの（gfx1151 ハーネス: 状態ビット一致）:</p>
+</blockquote>
+<pre><code>  1 行: 44.5 → 39.1 us
+  2 行: 47.4 → 40.5 us
+  4 行: 53.8 → 42.9 us
+</code></pre>
+<blockquote>
+<p><strong>出力を付けると先読みは負けた（レジスタ・プレッシャ）。</strong> だから窓は素の分割版を使う。」</p>
+</blockquote>
+<h3>8.4 防御的チェックの一例（#937）</h3>
+<blockquote>
+<p>「DBG（<code>STRATA_DBG_GDN=1</code>、#937）: ラウンチが決して許さなかった窓のカウント
+（<code>n_keep</code> はデバイスメモリから読まれ、<code>n_max</code> は窓が保持する行数）は報告され、
+コミットはスキップされる。<strong>そのフォールトはメモリアパーチャ違反になるから。</strong>」</p>
+</blockquote>
+<hr>
+<h2>9. この章のまとめ</h2>
+<ol>
+<li><strong>QSA は「選ぶ」attention</strong>。indexer の選択 ID には<strong>トレランスが無い</strong>（exact キー）。
+だから選択はソートでなく閾値探索で、証明可能に同じ集合を出す。</li>
+<li><strong>ページ写像を漏らさない</strong>。page_size 1/4/512 で出力が同一であることをテストが要求する。</li>
+<li><strong>graph capture は引数を凍結する</strong>。可変引数は「静かに間違える」ので、
+シグネチャを増やすのではなく 1 つの step バッファにまとめる。</li>
+<li><strong>数値の事件は 2 種類</strong>: 壊れた変換器（<code>__float2half</code>）と、
+<strong>名前が 1 文字違う intrinsic</strong>（<code>__fadd_rn</code> vs <code>__dadd_rn</code>）。
+どちらも妥当なトレランスでは見つからない。<strong>ビット厳密＋独立オラクル</strong>だけが見つける。</li>
+<li><strong>GDN はバリア不要</strong>。列ごとにスレッド 1 本が所有する形状だから。
+ただし「融合版」と「分離版」を両方持ち、検証は分離版で行う。</li>
+</ol>
+<hr>
+<p><em>次: <a href="06_prefill.html">06 prefill</a> — バッチ GEMM、テンソルコア、そして n-gram テーブル。</em></p>
+</article><footer><a href="04_moe.html">← 04. MoE — 512 個から 10 個を選び、GPU と CPU で分担する</a> ・ <a href="06_prefill.html">06. Prefill — 計算律速に切り替わる世界 →</a><br>出典: strata:~/Strata HEAD 61b3fb5 (v0.1.49) ／ 図は PNG（1000px 幅）</footer></div></body></html>

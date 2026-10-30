@@ -1,0 +1,636 @@
+<!doctype html><html lang="ja"><head><meta charset="utf-8"><meta name="viewport" content="width=device-width,initial-scale=1"><title>08. ファイルカタログ — 57 本の .cu を 1 枚に</title><style>:root{--cyan:#00f0ff;--mag:#ff2a6d;--acid:#d6ff2e;--ink:#07090d;--panel:#0b1119;--line:#1d2a36;--txt:#c9d4e0;--dim:#95a9bd;--lbl:#ffe066}
+*{box-sizing:border-box}
+html,body{margin:0;background:var(--ink);color:var(--txt);font-family:"JetBrains Mono","SF Mono",ui-monospace,Menlo,monospace;font-size:14px;line-height:1.85}
+body::before{content:"";position:fixed;inset:0;pointer-events:none;z-index:9;background:repeating-linear-gradient(180deg,rgba(0,240,255,.04) 0 1px,transparent 1px 4px)}
+.wrap{max-width:880px;margin:0 auto;padding:28px 24px 80px;position:relative;z-index:10}
+.nav{display:flex;justify-content:space-between;gap:12px;font-size:13px;border-bottom:1px solid var(--line);padding-bottom:10px;margin-bottom:26px}
+.nav a{color:var(--dim);text-decoration:none;border-bottom:1px solid transparent}
+.nav a:hover{color:var(--cyan);border-color:var(--cyan)}
+h1{font-size:23px;line-height:1.5;color:var(--cyan);letter-spacing:1px;margin:6px 0 18px;text-shadow:0 0 16px rgba(0,240,255,.35)}
+h2{font-size:17px;color:var(--lbl);margin:34px 0 10px;padding-left:10px;border-left:3px solid var(--mag);line-height:1.6}
+h3{font-size:15px;color:var(--acid);margin:24px 0 8px}
+p{margin:12px 0}
+a{color:var(--cyan)}
+strong{color:var(--lbl)}
+code{background:#12202b;color:var(--acid);padding:1px 5px;border:1px solid var(--line);font-size:13px;word-break:break-word}
+pre{background:#05080c;border:1px solid var(--line);padding:14px 16px;overflow-x:auto;font-size:13px;line-height:1.65}
+pre code{background:none;border:0;padding:0;color:#d7e6f2;font-size:13px}
+blockquote{margin:16px 0;padding:10px 16px;border-left:3px solid var(--cyan);background:rgba(0,240,255,.05);color:var(--txt)}
+blockquote p{margin:4px 0}
+table{border-collapse:collapse;width:100%;margin:16px 0;font-size:13px;display:block;overflow-x:auto}
+th,td{border:1px solid var(--line);padding:7px 10px;text-align:left;vertical-align:top}
+th{background:#101c26;color:var(--lbl);white-space:nowrap}
+tr:nth-child(even) td{background:#0a1219}
+ul,ol{padding-left:22px}
+li{margin:5px 0}
+hr{border:0;height:1px;background:linear-gradient(90deg,var(--cyan),var(--mag) 60%,transparent);margin:30px 0}
+.figrow{display:flex;flex-wrap:wrap;gap:12px;margin:18px 0}
+.figlink{display:block;flex:1 1 320px;text-decoration:none;background:#05080c;border:1px solid var(--line);padding:8px}
+.figlink img{width:100%;display:block}
+.figcap{display:block;font-size:13px;color:var(--lbl);font-weight:700;margin-top:6px}
+footer{margin-top:44px;padding-top:14px;border-top:1px solid var(--line);font-size:13px;color:var(--dim)}
+footer a{color:var(--dim)}</style></head><body><div class="wrap"><div class="nav"><a href="../index.html">← 目次 / 図一覧</a><span>STRATA 読解 08 / 08</span></div><article><h1>08. ファイルカタログ — 57 本の .cu を 1 枚に</h1>
+<blockquote>
+<p><code>src/kernels/cuda</code> 45 本 + <code>src/prefill</code> 9 本 + <code>src/core</code> 3 本 = <strong>57 ファイル / 34,312 行</strong>。
+各行数は <code>wc -l</code> 実測。章はこの読本のどこで詳述しているか。</p>
+</blockquote>
+<hr>
+<h2>0. 読む順序（おすすめ）</h2>
+<ol>
+<li><code>dequant_s2.cu</code>（51 行）— 最小の「量子化を解く」カーネル。ここで <strong>S2 のレイアウト</strong>を掴む</li>
+<li><code>s_gemv.cu</code>（694 行）— decode の主役。<a href="03_decode_gemv.html">03</a></li>
+<li><code>router_top10.cu</code>（497 行）— 「演算量≠時間」の実例。<a href="04_moe.html">04</a></li>
+<li><code>qsa.cu</code>（821 行）— attention とキャプチャ監査。<a href="05_attention_gdn.html">05</a></li>
+<li><code>gdn.cu</code>（248 行）— 再帰がバリア不要な理由。<a href="05_attention_gdn.html">05</a></li>
+<li><code>moe_fused.cu</code>（728 行）— magic float。<a href="06_prefill.html">06</a></li>
+<li><code>sampler.cu</code>（1393 行）— 「順序が内容」。<a href="07_misc.html">07</a></li>
+</ol>
+<hr>
+<h2>A. 量子化・活性・GEMV（decode の土台）</h2>
+<table>
+<thead>
+<tr>
+<th>ファイル</th>
+<th>行</th>
+<th>役割</th>
+<th>章</th>
+</tr>
+</thead>
+<tbody><tr>
+<td><code>dequant_s2.cu</code></td>
+<td>51</td>
+<td>S2（Q2_0）の最小デカント。1 スレッド = 64 要素ブロック、256 スレッド</td>
+<td><a href="02_quant.html">02</a> <a href="03_decode_gemv.html">03</a></td>
+</tr>
+<tr>
+<td><code>s2_gemv.cu</code></td>
+<td>63</td>
+<td>S2 GEMV の素朴版（1 スレッド/出力行、128 スレッド、ラッパで同期）</td>
+<td><a href="03_decode_gemv.html">03</a></td>
+</tr>
+<tr>
+<td><code>s2_gemv_quads.cu</code></td>
+<td>93</td>
+<td>4 要素/コードロード。L4 で 66 G weights/s を測った仮説検証</td>
+<td><a href="03_decode_gemv.html">03</a></td>
+</tr>
+<tr>
+<td><code>s2_gemv_fast.cu</code></td>
+<td>153</td>
+<td>名前は fast だが<strong>速くない</strong>（両てこが中立〜悪化、分散 20% が効果を隠す）</td>
+<td><a href="03_decode_gemv.html">03</a></td>
+</tr>
+<tr>
+<td><code>s2_gemv_q8.cu</code></td>
+<td>96</td>
+<td>Q8_0 活性を食う S2 GEMV（ggml と同じ契約）</td>
+<td><a href="02_quant.html">02</a> <a href="03_decode_gemv.html">03</a></td>
+</tr>
+<tr>
+<td><code>s_gemv.cu</code></td>
+<td>694</td>
+<td><strong>本命</strong>。4 カーネル（<code>s_gemv_kernel</code> / <code>_split</code> / <code>_q8k</code> / <code>_q8_split</code>）+ SForm</td>
+<td><a href="03_decode_gemv.html">03</a></td>
+</tr>
+<tr>
+<td><code>quantize_act.cu</code></td>
+<td>352</td>
+<td>活性の量子化（Q8_0 / Q8_K）+ f32_to_f16 の罠（round 198）</td>
+<td><a href="02_quant.html">02</a></td>
+</tr>
+<tr>
+<td><code>dequant_bf16.cu</code></td>
+<td>304</td>
+<td>BF16・Q8_0 のデカント（ggml-quants.c から転記）</td>
+<td><a href="02_quant.html">02</a></td>
+</tr>
+<tr>
+<td><code>iq_kernels.cu</code></td>
+<td>3614</td>
+<td>IQ1_M〜IQ4_XS・Q4_K 系のドット積/デカント/q8_1 量子化。<strong>最大ファイル</strong></td>
+<td><a href="02_quant.html">02</a> <a href="03_decode_gemv.html">03</a></td>
+</tr>
+<tr>
+<td><code>native_mmvq.cu</code></td>
+<td>2655</td>
+<td>llama.cpp MMVQ の移植（ncols 1..8、STRATA_Q8_PACKED、interleaved 列）</td>
+<td><a href="02_quant.html">02</a></td>
+</tr>
+<tr>
+<td><code>bf16_gemv.cu</code></td>
+<td>141</td>
+<td>BF16 GEMV（<code>s_gemv</code> を使わない理由はヘッダ）</td>
+<td><a href="02_quant.html">02</a></td>
+</tr>
+<tr>
+<td><code>native_bf16.cu</code></td>
+<td>383</td>
+<td>ピン留め CUDA の BF16/F32 MMVF（router・PLE が使う）</td>
+<td><a href="04_moe.html">04</a></td>
+</tr>
+<tr>
+<td><code>q8_1_il.cuh</code></td>
+<td>99</td>
+<td>2..8 列の q8_1 活性を interleaved に複製（multi-column ドット用）</td>
+<td><a href="02_quant.html">02</a></td>
+</tr>
+</tbody></table>
+<hr>
+<h2>B. MoE（router・shared expert・grouped）</h2>
+<table>
+<thead>
+<tr>
+<th>ファイル</th>
+<th>行</th>
+<th>役割</th>
+<th>章</th>
+</tr>
+</thead>
+<tbody><tr>
+<td><code>router_top10.cu</code></td>
+<td>497</td>
+<td>top-10 routing。3 実装（CUDA / AMD fast / gfx906 wave）</td>
+<td><a href="04_moe.html">04</a></td>
+</tr>
+<tr>
+<td><code>native_router.cu</code></td>
+<td>232</td>
+<td>ピン留め CUDA の route / route_multi / route_resident_k</td>
+<td><a href="04_moe.html">04</a></td>
+</tr>
+<tr>
+<td><code>shared_expert.cu</code></td>
+<td>419</td>
+<td>共有 expert（silu は gate 側、スカラ gate、<strong>BF16 同士</strong>の契約）</td>
+<td><a href="04_moe.html">04</a></td>
+</tr>
+<tr>
+<td><code>s2_expert_grouped.cu</code></td>
+<td>1236</td>
+<td>grouped GPU expert。int8 ドット + チャンク float、活性 4×4 転置</td>
+<td><a href="04_moe.html">04</a></td>
+</tr>
+<tr>
+<td><code>native_moe.cu</code></td>
+<td>170</td>
+<td>combine / combine_k10_vec4 / S26 LFUSE</td>
+<td><a href="04_moe.html">04</a></td>
+</tr>
+<tr>
+<td><code>route_prior.cu</code></td>
+<td>79</td>
+<td><code>STRATA_ROUTE_PRIOR=lambda</code>: <strong>キャッシュ条件付き routing</strong>（opt-in、出力が変わる）</td>
+<td><a href="04_moe.html">04</a></td>
+</tr>
+</tbody></table>
+<hr>
+<h2>C. attention・KV・位置エンコード</h2>
+<table>
+<thead>
+<tr>
+<th>ファイル</th>
+<th>行</th>
+<th>役割</th>
+<th>章</th>
+</tr>
+</thead>
+<tbody><tr>
+<td><code>qsa.cu</code></td>
+<td>821</td>
+<td>QSA キャッシュ/インデクサ/attention の入口 7 つ。キャプチャ監査</td>
+<td><a href="05_attention_gdn.html">05</a></td>
+</tr>
+<tr>
+<td><code>qsa_select.cu</code></td>
+<td>1365</td>
+<td>ブロックスコアと top-k 選択。世代順に warp / tc / wmma / GEMM / cluster</td>
+<td><a href="05_attention_gdn.html">05</a></td>
+</tr>
+<tr>
+<td><code>qsa_decode_attn.cu</code></td>
+<td>758</td>
+<td>8 要素ロード（f16/q8/q4）+ チャンク注意</td>
+<td><a href="05_attention_gdn.html">05</a></td>
+</tr>
+<tr>
+<td><code>qsa_prompt_attn.cu</code></td>
+<td>1525</td>
+<td>prefill 側注意（mma16816 int8 / i8 / 884）</td>
+<td><a href="05_attention_gdn.html">05</a> <a href="06_prefill.html">06</a></td>
+</tr>
+<tr>
+<td><code>native_qsa.cu</code></td>
+<td>167</td>
+<td>norm / norm_grouped / gate（llama.cpp から）</td>
+<td><a href="05_attention_gdn.html">05</a></td>
+</tr>
+<tr>
+<td><code>native_qsa_indexer.cu</code></td>
+<td>308</td>
+<td>indexer キーの追加・pooled value・norm_scale</td>
+<td><a href="05_attention_gdn.html">05</a></td>
+</tr>
+<tr>
+<td><code>native_qsa_score.cu</code></td>
+<td>213</td>
+<td>score（mma）と scalar_score</td>
+<td><a href="05_attention_gdn.html">05</a></td>
+</tr>
+<tr>
+<td><code>native_flash_attn.cu</code></td>
+<td>212</td>
+<td>llama.cpp fattn-vec の特化（D=256, ncols=1, F16/F16）</td>
+<td><a href="05_attention_gdn.html">05</a></td>
+</tr>
+<tr>
+<td><code>kv_q8.cu</code></td>
+<td>147</td>
+<td>KV の Q8 追記/収集</td>
+<td><a href="05_attention_gdn.html">05</a></td>
+</tr>
+<tr>
+<td><code>kv_q4.cu</code></td>
+<td>241</td>
+<td>KV の Q4_0 + Hadamard 回転（PR #21）</td>
+<td><a href="05_attention_gdn.html">05</a></td>
+</tr>
+<tr>
+<td><code>kv_stream.cu</code></td>
+<td>286</td>
+<td>KV リング（copy / reset / ring、プレフィックス和、16 B/スレッド）</td>
+<td><a href="01_memory.html">01</a> <a href="05_attention_gdn.html">05</a></td>
+</tr>
+<tr>
+<td><code>cvec.cu</code></td>
+<td>174</td>
+<td><code>fwht256</code>（Hadamard 回転）+ <code>cvec_apply</code></td>
+<td><a href="07_misc.html">07</a></td>
+</tr>
+<tr>
+<td><code>rope.cu</code></td>
+<td>136</td>
+<td>NEOX 部分 RoPE（旧経路）</td>
+<td><a href="05_attention_gdn.html">05</a></td>
+</tr>
+<tr>
+<td><code>native_rope.cu</code></td>
+<td>245</td>
+<td>ピン留め ggml rope の数値契約（NEOX ペア、部分 64/256、mrope 表）</td>
+<td><a href="05_attention_gdn.html">05</a></td>
+</tr>
+</tbody></table>
+<hr>
+<h2>D. GDN（ゲート付きデルタネット）</h2>
+<table>
+<thead>
+<tr>
+<th>ファイル</th>
+<th>行</th>
+<th>役割</th>
+<th>章</th>
+</tr>
+</thead>
+<tbody><tr>
+<td><code>gdn.cu</code></td>
+<td>248</td>
+<td>conv / l2 / beta-gate / out-norm / 再帰。<strong>バリア不要</strong>の理由</td>
+<td><a href="05_attention_gdn.html">05</a></td>
+</tr>
+<tr>
+<td><code>fused_gdn.cu</code></td>
+<td>166</td>
+<td>融合版（1 カーネルで pre を畳む）</td>
+<td><a href="05_attention_gdn.html">05</a></td>
+</tr>
+<tr>
+<td><code>native_gdn.cu</code></td>
+<td>122</td>
+<td>llama.cpp gated_delta_net.cu の移植（warp が 1 列を担当）</td>
+<td><a href="05_attention_gdn.html">05</a></td>
+</tr>
+<tr>
+<td><code>native_gdn_preprocess.cu</code></td>
+<td>199</td>
+<td>conv_silu / l2_norm / beta_sigmoid / gate_softplus / out_norm</td>
+<td><a href="05_attention_gdn.html">05</a></td>
+</tr>
+<tr>
+<td><code>verify_kernels.cu</code></td>
+<td>1357</td>
+<td>投機検証ウィンドウ。<strong>単一トークン版からの書き写し</strong></td>
+<td><a href="07_misc.html">07</a></td>
+</tr>
+</tbody></table>
+<hr>
+<h2>E. GR（ゲート付き残差・ハイパーコネクション）</h2>
+<table>
+<thead>
+<tr>
+<th>ファイル</th>
+<th>行</th>
+<th>役割</th>
+<th>章</th>
+</tr>
+</thead>
+<tbody><tr>
+<td><code>gr.cu</code></td>
+<td>500</td>
+<td><code>gr_read</code> / <code>gr_write</code>（分割版）</td>
+<td><a href="07_misc.html">07</a></td>
+</tr>
+<tr>
+<td><code>fused_gr.cu</code></td>
+<td>1991</td>
+<td>融合カーネル群。<code>gr_down_finish_kernel</code>、norm/up の遅延隠蔽</td>
+<td><a href="07_misc.html">07</a></td>
+</tr>
+<tr>
+<td><code>native_gr_norm.cu</code></td>
+<td>109</td>
+<td><code>weighted_rms_norm</code>（連続 F32）</td>
+<td><a href="07_misc.html">07</a></td>
+</tr>
+<tr>
+<td><code>native_gr_postops.cu</code></td>
+<td>161</td>
+<td>down_silu / pre_gated / post / post_multi</td>
+<td><a href="07_misc.html">07</a></td>
+</tr>
+</tbody></table>
+<hr>
+<h2>F. PLE（28.8 GB の n-gram テーブル）</h2>
+<table>
+<thead>
+<tr>
+<th>ファイル</th>
+<th>行</th>
+<th>役割</th>
+<th>章</th>
+</tr>
+</thead>
+<tbody><tr>
+<td><code>ple.cu</code></td>
+<td>390</td>
+<td>PLE ブロックの GPU 半分。legacy は CPU ggml グラフ準拠</td>
+<td><a href="07_misc.html">07</a></td>
+</tr>
+<tr>
+<td><code>native_ple_postops.cu</code></td>
+<td>289</td>
+<td>gate / broadcast / conv_residual / rms_rep（+batch 版）</td>
+<td><a href="07_misc.html">07</a></td>
+</tr>
+</tbody></table>
+<hr>
+<h2>G. 出力（サンプラ・糊）</h2>
+<table>
+<thead>
+<tr>
+<th>ファイル</th>
+<th>行</th>
+<th>役割</th>
+<th>章</th>
+</tr>
+</thead>
+<tbody><tr>
+<td><code>sampler.cu</code></td>
+<td>1393</td>
+<td>サンプラ連鎖。3 実装が同じトークン、Philox はカウンタベース</td>
+<td><a href="07_misc.html">07</a></td>
+</tr>
+<tr>
+<td><code>elementwise.cu</code></td>
+<td>446</td>
+<td>埋め込み gather・gdn_gate・<strong>doorbell</strong>・マップ済みコピー</td>
+<td><a href="07_misc.html">07</a></td>
+</tr>
+<tr>
+<td><code>s26_tsum.cuh</code></td>
+<td>71</td>
+<td>複数の warp 和を同時に（P 個の和、別々の xor バタフライとビット一致）</td>
+<td><a href="04_moe.html">04</a></td>
+</tr>
+</tbody></table>
+<hr>
+<h2>H. prefill（<code>src/prefill</code>）</h2>
+<table>
+<thead>
+<tr>
+<th>ファイル</th>
+<th>行</th>
+<th>役割</th>
+<th>章</th>
+</tr>
+</thead>
+<tbody><tr>
+<td><code>kernels.cu</code></td>
+<td>2214</td>
+<td>prefill の注意・GDN・PLE・postops。融合カタログ（F-1/F-2/S23/C-3/Aurora/D-2）</td>
+<td><a href="06_prefill.html">06</a></td>
+</tr>
+<tr>
+<td><code>gemm.cu</code></td>
+<td>873</td>
+<td>cuBLAS / hipBLASLt ラッパ。in-place FP16→FP32、DBG_NAN、Windows の古いエラー</td>
+<td><a href="06_prefill.html">06</a></td>
+</tr>
+<tr>
+<td><code>wmma_gemm.cu</code></td>
+<td>737</td>
+<td>RDNA3 WMMA（gfx1100..1151）。<code>STRATA_WMMA_GFX11</code> はビルド定義</td>
+<td><a href="06_prefill.html">06</a></td>
+</tr>
+<tr>
+<td><code>moe_fused.cu</code></td>
+<td>728</td>
+<td>自前 int8 テンソルコア MoE（magic float、m16n8k32 の k 順）</td>
+<td><a href="06_prefill.html">06</a></td>
+</tr>
+<tr>
+<td><code>moe_fused_iq.cu</code></td>
+<td>1215</td>
+<td>i-quant を int8 に復号して同じ道へ</td>
+<td><a href="06_prefill.html">06</a></td>
+</tr>
+<tr>
+<td><code>moe_mmq.cu</code></td>
+<td>298</td>
+<td>llama.cpp MMQ（ピン留め checkout から）</td>
+<td><a href="06_prefill.html">06</a></td>
+</tr>
+<tr>
+<td><code>ggml_cuda_host.cu</code></td>
+<td>147</td>
+<td>MMQ が参照する ggml-cuda のホストシンボル</td>
+<td><a href="06_prefill.html">06</a></td>
+</tr>
+<tr>
+<td><code>gdn_rec_parity.cu</code></td>
+<td>1383</td>
+<td>prefill 再帰 vs decode のビット一致検証</td>
+<td><a href="06_prefill.html">06</a></td>
+</tr>
+<tr>
+<td><code>gemm_bf16_parity.cu</code></td>
+<td>155</td>
+<td>BF16 GEMM 経路の一致検証（sm_80 未満は FP16 経由）</td>
+<td><a href="06_prefill.html">06</a></td>
+</tr>
+<tr>
+<td><code>wmma_gemm.h</code></td>
+<td>47</td>
+<td>上の宣言（HIP/CUDA 両対応）</td>
+<td><a href="06_prefill.html">06</a></td>
+</tr>
+</tbody></table>
+<hr>
+<h2>I. ランタイム（<code>src/core</code>）</h2>
+<table>
+<thead>
+<tr>
+<th>ファイル</th>
+<th>行</th>
+<th>役割</th>
+<th>章</th>
+</tr>
+</thead>
+<tbody><tr>
+<td><code>device.cu</code></td>
+<td>364</td>
+<td>CUDA/HIP 抽象・poison（NaN）・アーキ照合</td>
+<td><a href="07_misc.html">07</a></td>
+</tr>
+<tr>
+<td><code>pinned.cu</code></td>
+<td>800</td>
+<td>ピンド arena と並列 expert ロード（64 ビット seek、ヒュージページ）</td>
+<td><a href="01_memory.html">01</a> <a href="07_misc.html">07</a></td>
+</tr>
+<tr>
+<td><code>remote_expert_opt.cu</code></td>
+<td>197</td>
+<td>ピア/リモート GPU の expert 経路</td>
+<td><a href="01_memory.html">01</a></td>
+</tr>
+</tbody></table>
+<hr>
+<h2>J. 「1 ファイル 1 事故」早見表</h2>
+<p>このコードベースの価値は、<strong>事故とその修正理由がコメントに残っている</strong>ことにある。
+1 行で思い出せるようにまとめる。</p>
+<table>
+<thead>
+<tr>
+<th>ファイル</th>
+<th>事故</th>
+</tr>
+</thead>
+<tbody><tr>
+<td><code>s_gemv.cu</code></td>
+<td>barrier の前に early return（デッドロック）</td>
+</tr>
+<tr>
+<td><code>s2_gemv_fast.cu</code></td>
+<td>「速い」と名付けたら速くなかった（分散 20% が効果を隠す）</td>
+</tr>
+<tr>
+<td><code>s2_expert_grouped.cu</code></td>
+<td>gate-major の書き方が &gt;1 hit で別 expert の行を読む</td>
+</tr>
+<tr>
+<td><code>shared_expert.cu</code></td>
+<td><code>const float*</code> で BF16 を読む → 4.5 GiB arena 内を静かにオーバーリード</td>
+</tr>
+<tr>
+<td><code>quantize_act.cu</code></td>
+<td>f32_to_f16 が<strong>有限のオーバーフロー値を全部 NaN</strong> に（fixture が O(1) だけだった）</td>
+</tr>
+<tr>
+<td><code>router_top10.cu</code></td>
+<td>O(n²) の rank-by-counting が moe_route の 63%</td>
+</tr>
+<tr>
+<td><code>qsa.cu</code></td>
+<td><code>__fadd_rn</code>（単精度）を書いて pooling 全体が float に（0.4 ulp、許容誤差は全部通る）</td>
+</tr>
+<tr>
+<td><code>qsa.cu</code></td>
+<td>キャプチャで int64 引数が凍結 → 「文脈が無い」のに尤もらしい出力</td>
+</tr>
+<tr>
+<td><code>sampler.cu</code></td>
+<td>penalties を 2 度掛け・min_p を top_p の前に（#53、分布でしか分からない）</td>
+</tr>
+<tr>
+<td><code>verify_kernels.cu</code></td>
+<td>128 スレッド版で 7% の出力が 1 ulp 違う（#937 のウィンドウ数報告）</td>
+</tr>
+<tr>
+<td><code>ple.cu</code></td>
+<td>n-gram kernel の転置を取り違え（<code>ple_layer_xcheck.cpp</code> L79–83）</td>
+</tr>
+<tr>
+<td><code>elementwise.cu</code></td>
+<td>グラフキャプチャで <code>cudaEventRecord</code> が黙って消える → doorbell</td>
+</tr>
+<tr>
+<td><code>fused_gr.cu</code></td>
+<td>AMD (gfx906) 向け最適化を CUDA でもビルドする際のマクロ</td>
+</tr>
+<tr>
+<td><code>prefill/wmma_gemm.cu</code></td>
+<td>コンパイラマクロのガードが「return false」スタブを選び、WMMA が一度も走らない</td>
+</tr>
+<tr>
+<td><code>prefill/gemm.cu</code></td>
+<td>Windows の hipBLAS が成功時に古い <code>hipErrorInvalidValue</code> を残す（#247/#325）</td>
+</tr>
+<tr>
+<td><code>core/pinned.cu</code></td>
+<td>Windows の <code>fseek</code> が 32 ビットで 42.9 GB パックを壊す</td>
+</tr>
+</tbody></table>
+<hr>
+<h2>K. 全体の数字</h2>
+<table>
+<thead>
+<tr>
+<th>指標</th>
+<th>値</th>
+</tr>
+</thead>
+<tbody><tr>
+<td>.cu / .cuh ファイル</td>
+<td>57（+ ヘッダ多数）</td>
+</tr>
+<tr>
+<td>行数</td>
+<td>34,312（3 ディレクトリ合計）</td>
+</tr>
+<tr>
+<td>最大ファイル</td>
+<td><code>iq_kernels.cu</code> 3,614 行</td>
+</tr>
+<tr>
+<td>入力形式</td>
+<td>13 種 → GEMV では 3 コード幅 + 属性</td>
+</tr>
+<tr>
+<td>expert 総数</td>
+<td>24,576（48 層 × 512）</td>
+</tr>
+<tr>
+<td>top-k</td>
+<td>10</td>
+</tr>
+<tr>
+<td>パック全体</td>
+<td>38 GiB（うち Q2_0 が 31.64 GiB）</td>
+</tr>
+<tr>
+<td>PLE テーブル</td>
+<td>28.8 GB（SSD）</td>
+</tr>
+</tbody></table>
+<hr>
+<p>→ 次は <a href="../index.html">図一覧</a> の図と <a href="../index.html">index.html</a> を参照。</p>
+</article><footer><a href="07_misc.html">← 07. その他のホットスポット — sampler / verify / PLE / GR / ランタイム</a> ・ <a href="../index.html">目次へ</a><br>出典: strata:~/Strata HEAD 61b3fb5 (v0.1.49) ／ 図は PNG（1000px 幅）</footer></div></body></html>

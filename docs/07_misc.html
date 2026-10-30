@@ -1,0 +1,353 @@
+<!doctype html><html lang="ja"><head><meta charset="utf-8"><meta name="viewport" content="width=device-width,initial-scale=1"><title>07. その他のホットスポット — sampler / verify / PLE / GR / ランタイム</title><style>:root{--cyan:#00f0ff;--mag:#ff2a6d;--acid:#d6ff2e;--ink:#07090d;--panel:#0b1119;--line:#1d2a36;--txt:#c9d4e0;--dim:#95a9bd;--lbl:#ffe066}
+*{box-sizing:border-box}
+html,body{margin:0;background:var(--ink);color:var(--txt);font-family:"JetBrains Mono","SF Mono",ui-monospace,Menlo,monospace;font-size:14px;line-height:1.85}
+body::before{content:"";position:fixed;inset:0;pointer-events:none;z-index:9;background:repeating-linear-gradient(180deg,rgba(0,240,255,.04) 0 1px,transparent 1px 4px)}
+.wrap{max-width:880px;margin:0 auto;padding:28px 24px 80px;position:relative;z-index:10}
+.nav{display:flex;justify-content:space-between;gap:12px;font-size:13px;border-bottom:1px solid var(--line);padding-bottom:10px;margin-bottom:26px}
+.nav a{color:var(--dim);text-decoration:none;border-bottom:1px solid transparent}
+.nav a:hover{color:var(--cyan);border-color:var(--cyan)}
+h1{font-size:23px;line-height:1.5;color:var(--cyan);letter-spacing:1px;margin:6px 0 18px;text-shadow:0 0 16px rgba(0,240,255,.35)}
+h2{font-size:17px;color:var(--lbl);margin:34px 0 10px;padding-left:10px;border-left:3px solid var(--mag);line-height:1.6}
+h3{font-size:15px;color:var(--acid);margin:24px 0 8px}
+p{margin:12px 0}
+a{color:var(--cyan)}
+strong{color:var(--lbl)}
+code{background:#12202b;color:var(--acid);padding:1px 5px;border:1px solid var(--line);font-size:13px;word-break:break-word}
+pre{background:#05080c;border:1px solid var(--line);padding:14px 16px;overflow-x:auto;font-size:13px;line-height:1.65}
+pre code{background:none;border:0;padding:0;color:#d7e6f2;font-size:13px}
+blockquote{margin:16px 0;padding:10px 16px;border-left:3px solid var(--cyan);background:rgba(0,240,255,.05);color:var(--txt)}
+blockquote p{margin:4px 0}
+table{border-collapse:collapse;width:100%;margin:16px 0;font-size:13px;display:block;overflow-x:auto}
+th,td{border:1px solid var(--line);padding:7px 10px;text-align:left;vertical-align:top}
+th{background:#101c26;color:var(--lbl);white-space:nowrap}
+tr:nth-child(even) td{background:#0a1219}
+ul,ol{padding-left:22px}
+li{margin:5px 0}
+hr{border:0;height:1px;background:linear-gradient(90deg,var(--cyan),var(--mag) 60%,transparent);margin:30px 0}
+.figrow{display:flex;flex-wrap:wrap;gap:12px;margin:18px 0}
+.figlink{display:block;flex:1 1 320px;text-decoration:none;background:#05080c;border:1px solid var(--line);padding:8px}
+.figlink img{width:100%;display:block}
+.figcap{display:block;font-size:13px;color:var(--lbl);font-weight:700;margin-top:6px}
+footer{margin-top:44px;padding-top:14px;border-top:1px solid var(--line);font-size:13px;color:var(--dim)}
+footer a{color:var(--dim)}</style></head><body><div class="wrap"><div class="nav"><a href="../index.html">← 目次 / 図一覧</a><span>STRATA 読解 07 / 08</span></div><article><h1>07. その他のホットスポット — sampler / verify / PLE / GR / ランタイム</h1>
+<blockquote>
+<p>対象: <code>src/kernels/cuda/sampler.cu</code>（1393）、<code>verify_kernels.cu</code>（1357）、<code>ple.cu</code>（390）、
+<code>native_ple_postops.cu</code>（289）、<code>gr.cu</code>（500）、<code>fused_gr.cu</code>（1991）、<code>elementwise.cu</code>（446）、
+<code>cvec.cu</code>（174）、<code>src/core/device.cu</code>（364）、<code>pinned.cu</code>（800）、<code>remote_expert_opt.cu</code>（197）</p>
+</blockquote>
+<p>各章で拾えなかった「地味だが事故が起きる場所」をまとめる。ここも<strong>コメントが最も饒舌な領域</strong>で、
+バグの歴史がそのまま設計理由になっている。</p>
+<hr>
+<h2>1. <code>sampler.cu</code> — 「順序がこのファイルの全内容」</h2>
+<p>冒頭 1 行目からして:</p>
+<blockquote>
+<p>「<code>sampler.cu</code> — P2.S2: サンプラ連鎖、<strong>llama.cpp の順序で</strong>。
+<code>penalties -&gt; top_k -&gt; top_p -&gt; min_p -&gt; temperature -&gt; pick</code>」</p>
+</blockquote>
+<h3>1.1 何が難しかったのか</h3>
+<blockquote>
+<p>「<strong>順序がこのファイルの全内容である。</strong> llama.cpp は <code>params.samplers</code> を歩いて連鎖を作る。
+既定は <code>{PENALTIES, DRY, TOP_N_SIGMA, TOP_K, TYPICAL_P, TOP_P, MIN_P, XTC, TEMPERATURE}</code>
+（3cf03257 の <code>common/common.h</code>）— <strong>penalties 段は 1 つだけ、最初に</strong>、そして
+<strong>TEMPERATURE は切り詰めフィルタの後</strong>。
+（Issue #53: このファイルは以前、temperature の後で penalties を 2 度掛け、top_p の前に min_p を掛けていた —
+どちらも <code>common/sampling.cpp</code> の <code>case</code> ラベルの順序から取ったもので、<strong>連鎖が走る順序ではない</strong>。）」</p>
+</blockquote>
+<p>決定的な一文が続く:</p>
+<blockquote>
+<p>「<strong>どんな順序でも妥当なトークンを出す。だから分布レベルの比較しか違いを見分けられない</strong> —
+parity テストはそれを独立に計算した分布と突き合わせて行う。」</p>
+</blockquote>
+<p>これが「静かに間違う」の最良の例だ。1 トークンを見ている限り、penalties を 2 度掛けても
+「それらしい文章」が出る。<strong>分布</strong>を見ないと分からない。</p>
+<h3>1.2 3 つの実装が同じトークンを選ぶ</h3>
+<blockquote>
+<p>「greedy は素の argmax（1 ブロック/トークン、語彙全体。sm_90+ でペナルティ無しなら
+<code>sampler_greedy_cluster_kernel</code>: 行あたり 8 CTA のクラスタで同じトークン）。サンプル連鎖には
+<strong>同じトークンをビット単位で選ぶ 3 つの実装</strong>がある:
+— 分割 top_k（既定）: <code>sampler_split_part_kernel</code> が各行を 4,096 ロジットのブロックに GPU 全体で割り、
+各ブロックが自分の top_k を保ち、<code>sampler_split_merge_kernel</code> がそれらを併合して残りを走らせる
+— <code>sampler_one_block_kernel</code>（<code>STRATA_SAMPLER_ONE_BLOCK=1</code>、分割が走れないときのフォールバック）:
+1 ブロック/トークン、top_k 回のブロック argmax
+— <code>sampler_kernel</code>（<code>STRATA_OLD_SAMPLER=1</code>）: engine 0.1.20 のカーネル、参照として保持
+新しい 2 つは <code>sampled_tail_warp</code>（top_p / min_p / temperature / 抽選を 1 ワープで）を共有する。」</p>
+</blockquote>
+<h3>1.3 Philox を選んだ理由（再現性の設計）</h3>
+<blockquote>
+<p>「Philox 4x32-10、フェーズが要求するカウンタベース生成器。
+<strong>カウンタベースであることが重要</strong>: 乱数列が「何回引いたか」ではなく <strong>(seed, position) の関数</strong>になるので、
+バッチをどんな順でサンプルしてもよく、実行が再現可能になる。」</p>
+</blockquote>
+<p>「GPU で並列にサンプルする」ときに最初に壊れるのは再現性だ。カウンタベースなら
+「トークン位置 → 乱数」が関数になる。<strong>これは <a href="05_attention_gdn.html">05</a> のキャプチャ監査と同じ思想</strong>で、
+「状態を隠さない」。</p>
+<h3>1.4 その他の段</h3>
+<p><code>coupled_stage</code> / <code>coupled_penalize</code> は投機デコードの「結合」サンプリング
+（<code>coupled_draft.hpp</code> / <code>spec_prob.hpp</code>）。投機では draft と target の分布の一致が要るので、
+乱数も分布も共有する必要がある（<a href="#2-verify_kernelscu--%E6%8A%95%E6%A9%9F%E3%81%AE%E6%A4%9C%E8%A8%BC">07 §2</a> と対）。</p>
+<hr>
+<h2>2. <code>verify_kernels.cu</code> — 投機の検証</h2>
+<h3>2.1 前提となる設計</h3>
+<p>Strata は MTP 層で最大 3 トークンを先読みし、<strong>1 パスで全部検証</strong>する（2.4–3.2 トークン/パス）。
+繰り返し入力では prompt lookup が最大 5 トークンを先読みする。</p>
+<p>検証の意味は「draft が提案した k トークンを、<strong>素の decode と同じ計算</strong>で正しいか確かめる」こと。
+ここで 1 ビットでも違うと<strong>受理率が静かに落ちる</strong>（プロンプトは同じ、速度だけ落ちる）。</p>
+<h3>2.2 だから「書き写し」である</h3>
+<blockquote>
+<p>「ここの全カーネルの<strong>トークン毎の演算は、単一トークン版の元（<code>fused_gdn.cu</code>、<code>elementwise.cu</code>）から
+書き写されており、同じ演算順序を持つ。だから検証ウィンドウは plain decode をビット単位で再現する。</strong>」</p>
+</blockquote>
+<p>工夫ではなく<strong>制約</strong>を守るコード。具体的には:</p>
+<table>
+<thead>
+<tr>
+<th>仕組み</th>
+<th>内容</th>
+</tr>
+</thead>
+<tbody><tr>
+<td><code>gdn_conv_l2_multi_kernel</code></td>
+<td>履歴を「読んでから自分のチャネルを書く」— <code>commit</code> が 1 なら [hist1, hist2, x_0] を残す</td>
+</tr>
+<tr>
+<td>state-only commit</td>
+<td>状態の 128 列を <strong>1 ヘッドあたり 4 ブロック×32</strong> に分割（48×4 = 192 ブロック × 128 スレッド、対 48 ブロック × 512）。sq / o / norm / z / y を計算しない</td>
+</tr>
+<tr>
+<td>なぜ分割か</td>
+<td>旧実装は層の状態 2 MB を約 60 GB/s で読んでいた（帯域の無駄）</td>
+</tr>
+<tr>
+<td>S25 <code>STRATA_GDN_SPLIT=1</code></td>
+<td>上の分割を有効化</td>
+</tr>
+<tr>
+<td>S26 <code>OUT=false</code></td>
+<td>出力縮約とバリア 2 つを落とす。コード形状は保つのでビット一致。ただし <strong>128 スレッド版は約 7% の出力で 1 ulp 違った</strong>（＝並列度を変えると最後のビットが変わる）</td>
+</tr>
+<tr>
+<td>S26 prefetch</td>
+<td>gate/beta/v を先に、次の行の k/q を現在行の間に。gfx1151・h_v 48 で 44.5→39.1 µs（1 行）、47.4→40.5（2 行）、53.8→42.9（4 行）。ただし出力ありではレジスタ圧で負ける</td>
+</tr>
+<tr>
+<td><code>STRATA_QFUSE=1</code></td>
+<td>q8_1 イメージを <code>native_quantize_q8_1_kernel</code> で作る</td>
+</tr>
+<tr>
+<td><code>STRATA_DBG_GDN=1</code></td>
+<td>#937: <strong>起動が決して許さなかったウィンドウ数を報告し、commit を飛ばす</strong>（そのまま commit するとメモリアパーチャ違反になる）</td>
+</tr>
+</tbody></table>
+<h3>2.3 「ウィンドウ数」という概念</h3>
+<p>投機では「何トークン分の状態を検証するか」をウィンドウと呼ぶ。ウィンドウは
+<strong>起動時に決まる</strong>ので、カーネルは「自分が担当するウィンドウ」を受け取る。
+#937 のデバッグフラグは「起動が許さなかった数」を報告する — つまり
+<strong>「呼び出し側とカーネル側でウィンドウ数の解釈がずれた」<strong>というバグの痕跡で、
+それが起きたときは commit を飛ばして</strong>壊れた状態を書かない</strong>ようにしてある。</p>
+<hr>
+<h2>3. <code>ple.cu</code> — 28.8 GB の n-gram テーブルを扱う層</h2>
+<p>PLE は <strong>SSD 上の 28.8 GB の n-gram テーブル</strong>（<a href="01_memory.html">01</a>）。トークンごとに数行だけを
+<strong>非バッファ読み</strong>する。<code>--ple-io direct</code> が既定。</p>
+<p><code>ple.cu</code> は「PLE ブロックの GPU 半分」（P2.S4）。</p>
+<h3>3.1 レガシー演算は「キャプチャした CPU ggml グラフ」に従う</h3>
+<blockquote>
+<p>「下のレガシー演算は、キャプチャした CPU ggml グラフ（<code>bench/micro/ple_in.bin</code> / <code>ple_out.bin</code>、
+<code>ple_layer_xcheck.cpp</code> が生成）に従う:
+— <code>rms_norm</code> は <code>(double)(x*x)</code> を<strong>積を先に f32 で丸めてから</strong>累積する — これは文字通り
+  <code>ggml_compute_forward_rms_norm_f32</code> がやっていること（<code>sum += (ggml_float)(x[i00]*x[i00])</code>、
+  <code>ggml_float</code> = double）であり、f32 で累積するのとも、積む前に拡張するのとも違う
+— <code>silu</code> は f32 の <code>x / (1 + expf(-x))</code>、つまり <code>ggml_silu_f32</code>
+— gate の <code>sqrt</code> と <code>sigmoid</code> は f32」</p>
+</blockquote>
+<p>**「CPU 実装の丸め順序を再現する」**ことが要件。これは <a href="02_quant.html">02</a> の
+「同じ整数を、より少ない命令で」と同じ種類の要求で、<strong>ビット一致のためには順序が仕様</strong>。</p>
+<h3>3.2 3 つの経路</h3>
+<table>
+<thead>
+<tr>
+<th>経路</th>
+<th>内容</th>
+</tr>
+</thead>
+<tbody><tr>
+<td>legacy</td>
+<td>上の CPU グラフ準拠（既定）</td>
+</tr>
+<tr>
+<td>native BF16（opt-in）</td>
+<td><code>ple_value</code> <strong>だけ</strong>をピン留め CUDA の単一トークン BF16/F32 MMVF に置換</td>
+</tr>
+<tr>
+<td>native postops（別 opt-in）</td>
+<td>両方の射影の後、ピン留め CUDA の演算に従う</td>
+</tr>
+</tbody></table>
+<p><strong>置換は 1 関数ずつ</strong>。だから「どこが変わったか」が常に言える。</p>
+<h3>3.3 転置の罠（実際に一度間違えた）</h3>
+<blockquote>
+<p>「<code>ref/ngram.py</code> の (4, 10240) numpy の <code>kernel[k][c]</code> は、そのビューの<strong>転置</strong>である。
+ソース自身のビュー（<code>ggml_view_2d(model.layers[il].ple_conv1d, 1, hc_dim, nb[1], k*nb[0])</code>）が
+どちらを意味するかを決める。」</p>
+</blockquote>
+<p>さらに <code>ple_layer_xcheck.cpp</code> L79–83 には「<strong>これを一度間違えた記録がある</strong>」と書いてある。
+ヘッダ <code>ple.hpp</code> の重要な発見は <code>normalized</code>-<strong>が</strong> conv の入力だということ（名前から逆を想像しやすい）。</p>
+<p>PLE のカーネル群: <code>history_advance</code>, <code>gnorm</code>, <code>gate</code>, <code>bcast</code>, <code>conv</code>, <code>add3</code>,
+<code>bf16_gemv</code>, <code>to_bf16</code>（<code>ple.cu</code>）、<code>native_ple_postops.cu</code> 側に
+<code>gate</code> / <code>broadcast</code> / <code>conv_residual</code> / <code>rms_rep</code> / <code>rms_rep_rt</code> と <code>*_batch</code> 版。
+定数は <code>N = 2560</code>, <code>H = 4</code>, <code>D = 10240</code>, <code>HISTORY = 9</code>。</p>
+<hr>
+<h2>4. GR（ゲート付き残差）— <code>gr.cu</code> と <code>fused_gr.cu</code></h2>
+<p>Qwen3.8-Flash-Next のハイパーコネクション（HC = 4 ストリーム）を畳む層。
+<code>fused_gr.cu</code>（1991 行）は <code>launch_bounds</code> カーネルの寄せ集めで、寸法は固定:</p>
+<pre><code>N = 2560   （n_embd）
+HC = 4     （ストリーム数）
+D = N * HC = 10240
+LR = 320   （hc_lr）
+DOWN_BLOCKS = LR / WARPS = 40   （8 行ずつ、注入行のため +1）
+UP_COLS = 32、UP_BLOCKS = N / UP_COLS = 80   （up ブロックの d 列 × 4 ストリーム = 128 行）
+</code></pre>
+<pre><code class="language-c">// 遅延隠蔽の norm/up（gr_norm_fast_kernel / gr_up_fast_kernel, STRATA_GR_FAST）:
+// gfx906 のものだが、CUDA 向けにもビルドされる
+#if defined(STRATA_HIP_GFX906) || !defined(__HIPCC__)
+#define STRATA_GR_FAST_BUILD 1
+#else
+#define STRATA_GR_FAST_BUILD 0
+#endif
+</code></pre>
+<p>このマクロは <a href="06_prefill.html">06 §4</a> の教訓の別バージョン: <strong>AMD の特定アーキで書いた最適化を
+CUDA 側にもビルドする</strong>とき、両方のプリプロセッサで同じ定義になるようにしている。</p>
+<p><code>gr.cu</code>（500 行）は分割版（<code>gr_norm_kernel</code>, <code>gr_down_kernel</code>）、
+<code>native_gr_norm.cu</code> は <code>weighted_rms_norm</code>、<code>native_gr_postops.cu</code> は
+<code>down_silu</code> / <code>pre_gated</code> / <code>post</code> / <code>post_multi</code>。
+<strong>fused と unfused が両方あるのは parity の参照のため</strong>（<a href="04_moe.html">04</a> の GDN と同じ理由）。</p>
+<hr>
+<h2>5. <code>elementwise.cu</code> と doorbell</h2>
+<p>地味なカーネルの集まり（446 行）だが、<strong>GPU と CPU を重ねる仕組みの心臓</strong>がある。</p>
+<table>
+<thead>
+<tr>
+<th>カーネル</th>
+<th>役割</th>
+</tr>
+</thead>
+<tbody><tr>
+<td><code>embedding_gather_kernel</code></td>
+<td>量子化埋め込みの行取り出し（code_bits 2/4/8、<code>__fmul_rn</code> で明確に丸め）</td>
+</tr>
+<tr>
+<td><code>gdn_gate_kernel</code></td>
+<td><code>softplus(alpha + dt) * ssm_a</code></td>
+</tr>
+<tr>
+<td><code>scale</code>, <code>add</code>, <code>to_f16</code>, <code>to_bf16</code>, <code>silu</code>, <code>rms_norm_weighted</code></td>
+<td>基本演算</td>
+</tr>
+<tr>
+<td><code>doorbell_ring</code>, <code>doorbell_wait</code>, <code>doorbell_publish</code>, <code>doorbell_publish_res</code>, <code>doorbell_publish_value</code></td>
+<td><strong>GPU → CPU の鐘</strong></td>
+</tr>
+<tr>
+<td><code>copy_from_mapped</code>, <code>copy_rows_from_mapped</code>, <code>copy_from_mapped_multi</code>, <code>copy_i32_from_mapped</code>, <code>scatter_rows</code></td>
+<td>マップ済みホストメモリとのコピー</td>
+</tr>
+</tbody></table>
+<h3>doorbell が必要な理由（<a href="00_overview.html">00</a> の再掲・詳細）</h3>
+<p>split graph で「attention 側が終わったら CPU プールを走らせてほしい」と GPU が CPU に伝える必要がある。
+本来は <code>cudaEventRecord</code> でよい。<strong>しかし CUDA グラフのキャプチャ中、<code>cudaEventRecord</code> は黙って捨てられる</strong>
+（round 199）。だから:</p>
+<blockquote>
+<p>「doorbell = マップ済みピンドメモリに<strong>シーケンス番号を書くカーネル</strong>」</p>
+</blockquote>
+<p>CPU はその番号をポーリングする。イベントではなく<strong>データ</strong>なので、グラフに焼いても消えない。
+これが <a href="00_overview.html">00</a> の split graph の「鐘」の実体である。</p>
+<h3>softplus の分岐が「化粧ではない」理由</h3>
+<pre><code class="language-c">/// ggml_compute_softplus_f32: log1p(exp(x))、大きな x でのオーバーフローを避ける分岐つき。
+/// 分岐は化粧ではない。exp(89) は f32 でオーバーフローし、exp(20) は既に 4.85e8 で
+/// log1p は相対精度を失う。20 を超えると f32 の範囲では関数は x である。
+__device__ __forceinline__ float softplus_dev(float x) { return x &gt; 20.0f ? x : log1pf(expf(x)); }
+</code></pre>
+<hr>
+<h2>6. <code>cvec.cu</code> — Hadamard 回転（KV の int8 量子化の前処理）</h2>
+<p><code>fwht256</code>（fast Walsh–Hadamard transform、256 要素）と <code>cvec_apply</code>。
+KV を q8/q4 に圧縮する前に回転を掛けると、外れ値が分散して量子化誤差が減る
+（<a href="05_attention_gdn.html">05</a> の KV 階層）。<strong>回転は直交なので内積が変わらない</strong> — これが
+「量子化しても attention の結果がほぼ変わらない」ことの根拠である。</p>
+<hr>
+<h2>7. ランタイム — <code>device.cu</code> / <code>pinned.cu</code> / <code>remote_expert_opt.cu</code></h2>
+<h3>7.1 未初期化メモリを 0 ではなく NaN で埋める</h3>
+<pre><code class="language-c">// ゼロではなく NaN パターン。未初期化メモリから読んだ 0 は、量子化解除済み重みや
+// マスク済み attention スコアの本物の 0 と区別がつかない — まさに Phase 1 の
+// ハーネスが捕まえ続けた「間違っているが尤もらしい値」の類である。
+__global__ void poison_kernel(float* p, uint64_t n_floats) {
+    const uint64_t i = (uint64_t) blockIdx.x * blockDim.x + threadIdx.x;
+    if (i &lt; n_floats) p[i] = __int_as_float(0x7fc00000);
+}
+</code></pre>
+<p><strong>0 は「正しい値」と区別できない。NaN は伝播する。</strong> デバッグビルドの基本だが、
+この一文がその理由を書いている。</p>
+<h3>7.2 アーキテクチャの取り違えを起動時に検出</h3>
+<p><code>device.cu</code> は <code>STRATA_HIP_ARCHS</code>（<code>cmake/hip_backend.cmake</code> が設定）を要求し、
+未定義ならビルドを止める。<code>compiled_for(arch)</code> は「このバイナリは実行中の GPU 向けにビルドされたか」を
+判定する（<code>&quot;gfx1201:sramecc-:xnack-&quot;</code> → <code>&quot;gfx1201&quot;</code> に切り詰めてから比較）。
+<a href="06_prefill.html">06 §4</a> の WMMA の話と同じ根: <strong>コンパイラマクロでは判定できないので、
+CMake が確定したリストを埋め込む</strong>。</p>
+<h3>7.3 <code>pinned.cu</code>（800 行）— 42.9 GB を並列に読む</h3>
+<blockquote>
+<p>「Loader fix: <code>fseek</code>/<code>ftell</code> は Windows では既定で 32 ビット（そしてパックは 42.9 GB）、
+64 ビットの綴りはエンジンがビルドする 2 つのプラットフォームで同じではない。」</p>
+</blockquote>
+<pre><code class="language-c">#ifdef _WIN32
+#define STRATA_FSEEK64(f, o) _fseeki64((f), (long long) (o), SEEK_SET)
+#else
+#define STRATA_FSEEK64(f, o) fseeko((f), (off_t) (o), SEEK_SET)
+#endif
+</code></pre>
+<p>さらに <code>MAP_HUGE_2MB</code>（2 MB ヒュージページ）を自前で定義（カーネルヘッダに無い場合がある）、
+<code>std::thread</code> で expert を並列ロード、<code>std::atomic</code> で進捗。<strong>6 機種・3 OS で動くコードの現実</strong>。</p>
+<h3>7.4 <code>remote_expert_opt.cu</code></h3>
+<p>ピア GPU / リモート GPU の expert を扱う経路（<a href="01_memory.html">01</a>）。
+「VRAM キャッシュ → RAM → ピア GPU」の 3 番目の選択肢で、NVLink / P2P がある場合だけ得になる。</p>
+<hr>
+<h2>8. この章のまとめ</h2>
+<table>
+<thead>
+<tr>
+<th>主題</th>
+<th>一番の教訓</th>
+</tr>
+</thead>
+<tbody><tr>
+<td>sampler</td>
+<td><strong>どんな順序でも妥当なトークンが出る</strong> → 分布でしか検証できない</td>
+</tr>
+<tr>
+<td>verify</td>
+<td><strong>書き写す</strong>ことが仕様。並列度を変えると最下位ビットが変わる</td>
+</tr>
+<tr>
+<td>PLE</td>
+<td>CPU 実装の丸め順序が仕様。転置は一度間違えている</td>
+</tr>
+<tr>
+<td>GR</td>
+<td>AMD 向け最適化を CUDA にもビルドする際のマクロ設計</td>
+</tr>
+<tr>
+<td>elementwise</td>
+<td><strong>グラフキャプチャでイベントは消える、データは消えない</strong></td>
+</tr>
+<tr>
+<td>ランタイム</td>
+<td>未初期化は 0 でなく NaN で埋める；サイズは型で壊れる</td>
+</tr>
+</tbody></table>
+<h3>読者チェックリスト</h3>
+<ol>
+<li>サンプラの順序が違っても「動く」のはなぜか。どうやって検出するか</li>
+<li>投機の検証カーネルが「最適化」ではなく「書き写し」である理由</li>
+<li>PLE の rms_norm が<strong>積を f32 で丸めてから double で累積</strong>するのはなぜか</li>
+<li><code>cudaEventRecord</code> がグラフキャプチャで消えるとなぜ doorbell が必要になるか</li>
+<li>未初期化メモリを 0 で埋めると何が見えなくなるか</li>
+<li>Windows の <code>fseek</code> が 42.9 GB パックで壊れる理由</li>
+</ol>
+</article><footer><a href="06_prefill.html">← 06. Prefill — 計算律速に切り替わる世界</a> ・ <a href="08_catalog.html">08. ファイルカタログ — 57 本の .cu を 1 枚に →</a><br>出典: strata:~/Strata HEAD 61b3fb5 (v0.1.49) ／ 図は PNG（1000px 幅）</footer></div></body></html>

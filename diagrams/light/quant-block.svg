@@ -1,0 +1,102 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 1000 860" width="1000" height="860" font-family="'JetBrains Mono','SF Mono',ui-monospace,monospace">
+  <defs>
+    <linearGradient id="bg" x1="0" y1="0" x2="1" y2="1"><stop offset="0" stop-color="#ffffff"/><stop offset="1" stop-color="#faf8f2"/></linearGradient>
+    <marker id="ac" markerWidth="9" markerHeight="9" refX="7" refY="4.5" orient="auto"><path d="M0,0 L9,4.5 L0,9 z" fill="#1f4e79"/></marker>
+    <marker id="am" markerWidth="9" markerHeight="9" refX="7" refY="4.5" orient="auto"><path d="M0,0 L9,4.5 L0,9 z" fill="#9e2b25"/></marker>
+  </defs>
+  <rect width="1000" height="860" fill="url(#bg)"/>  <text x="40" y="46" fill="#1f4e79" font-size="20" font-weight="700" letter-spacing="4">QUANT BLOCK LAYOUTS</text>
+  <text x="40" y="70" fill="#7a5c12" font-size="13" font-weight="700">13 形式 → 3 つのコード幅（2 / 4 / 8 bit）+ 実行時属性</text>
+  <text x="960" y="46" text-anchor="end" fill="#9e2b25" font-size="13" font-weight="700">STRATA / 02_quant</text>
+
+  <!-- S2 block -->
+  <text x="40" y="108" fill="#9e2b25" font-size="15" font-weight="700">S2 = Q2_0 の正準形（パック 38 GiB のうち 31.64 GiB、decode 最熱）</text>
+  <text x="40" y="136" fill="#232323" font-size="13">64 要素 = 16 バイトのコード + FP32 スケール 1 個 = 20 バイト</text>
+
+  <!-- bytes -->
+  <g>
+    <rect x="40" y="150" width="60" height="44" fill="#f4f1e7" stroke="#1f4e79" stroke-width="1"/>
+    <rect x="100" y="150" width="60" height="44" fill="#f4f1e7" stroke="#1f4e79" stroke-width="1"/>
+    <rect x="160" y="150" width="60" height="44" fill="#f4f1e7" stroke="#1f4e79" stroke-width="1"/>
+    <rect x="220" y="150" width="60" height="44" fill="#f4f1e7" stroke="#1f4e79" stroke-width="0.8" stroke-dasharray="3 3"/>
+    <rect x="280" y="150" width="60" height="44" fill="#f4f1e7" stroke="#1f4e79" stroke-width="0.8" stroke-dasharray="3 3"/>
+    <rect x="340" y="150" width="60" height="44" fill="#f4f1e7" stroke="#1f4e79" stroke-width="1"/>
+    <rect x="400" y="150" width="90" height="44" fill="#f4f1e7" stroke="#9e2b25" stroke-width="1.4"/>
+  </g>
+  <text x="56" y="177" fill="#4f5d00" font-size="13" font-weight="700">byte 0</text>
+  <text x="116" y="177" fill="#4f5d00" font-size="13" font-weight="700">byte 1</text>
+  <text x="176" y="177" fill="#4f5d00" font-size="13" font-weight="700">byte 2</text>
+  <text x="232" y="177" fill="#6a6a6a" font-size="13">…</text>
+  <text x="292" y="177" fill="#6a6a6a" font-size="13">…</text>
+  <text x="352" y="177" fill="#4f5d00" font-size="13" font-weight="700">byte15</text>
+  <text x="410" y="171" fill="#9e2b25" font-size="13" font-weight="700">FP32 scale</text>
+  <text x="410" y="188" fill="#6a6a6a" font-size="12">4 バイト</text>
+  <text x="40" y="216" fill="#232323" font-size="13">要素 i は byte i/4 のビット (i%4)·2 から 2 ビット（LSB 先）</text>
+  <text x="40" y="238" fill="#232323" font-size="13">value = (code + bias) · scale　※ bias は整数領域で適用（pack-format.md §3.1）</text>
+  <text x="40" y="262" fill="#7a5c12" font-size="13" font-weight="700">GGUF 順序 [n_in, n_out]、n_in が連続 → 出力行 o は n_in/64 個のグループの連続</text>
+
+  <!-- bit cell detail -->
+  <rect x="560" y="150" width="400" height="112" fill="#ffffff" stroke="#1f4e79" stroke-width="1.2"/>
+  <text x="578" y="172" fill="#1f4e79" font-size="13" font-weight="700">1 バイト = 4 コード</text>
+  <rect x="578" y="184" width="24" height="20" fill="#4f5d00" opacity="0.8"/><text x="584" y="199" fill="#ffffff" font-size="12" font-weight="700">c0</text>
+  <rect x="602" y="184" width="24" height="20" fill="#1f4e79" opacity="0.8"/><text x="608" y="199" fill="#ffffff" font-size="12" font-weight="700">c1</text>
+  <rect x="626" y="184" width="24" height="20" fill="#9e2b25" opacity="0.8"/><text x="632" y="199" fill="#ffffff" font-size="12" font-weight="700">c2</text>
+  <rect x="650" y="184" width="24" height="20" fill="#6a6a6a" opacity="0.8"/><text x="656" y="199" fill="#ffffff" font-size="12" font-weight="700">c3</text>
+  <text x="690" y="199" fill="#232323" font-size="13">← 各 2 ビット</text>
+  <text x="578" y="228" fill="#6a6a6a" font-size="13">活性は Q8_0（34 B/32）か Q8_K（292 B/256）</text>
+  <text x="578" y="250" fill="#9e2b25" font-size="13" font-weight="700">act_kind は型から導出できない（明示必須）</text>
+
+  <!-- activation variants -->
+  <text x="40" y="316" fill="#9e2b25" font-size="15" font-weight="700">活性側のブロック（decode で毎回作る）</text>
+  <rect x="40" y="330" width="440" height="72" fill="#ffffff" stroke="#1f4e79" stroke-width="1.2"/>
+  <text x="58" y="352" fill="#1f4e79" font-size="13" font-weight="700">Q8_0: 34 バイト / 32 値</text>
+  <text x="58" y="374" fill="#232323" font-size="13">fp16 d (2 B) + int8 qs[32]</text>
+  <text x="58" y="394" fill="#6a6a6a" font-size="13">s2_gemv_q8 / s_gemv_q8_0_split</text>
+
+  <rect x="500" y="330" width="460" height="72" fill="#ffffff" stroke="#4f5d00" stroke-width="1.2"/>
+  <text x="518" y="352" fill="#4f5d00" font-size="13" font-weight="700">Q8_K: 292 バイト / 256 値</text>
+  <text x="518" y="374" fill="#232323" font-size="13">f32 d (4 B) + int8 qs[256] + int16 bsums[16]</text>
+  <text x="518" y="394" fill="#6a6a6a" font-size="13">▸ ffn_down_shexp は n_in=640 なので構造的に不可</text>
+
+  <rect x="40" y="414" width="440" height="72" fill="#ffffff" stroke="#9e2b25" stroke-width="1.2"/>
+  <text x="58" y="436" fill="#9e2b25" font-size="13" font-weight="700">Q8_1: 36 バイト / 32 値</text>
+  <text x="58" y="458" fill="#232323" font-size="13">fp16 d + fp16 sum + int8 qs[32]</text>
+  <text x="58" y="478" fill="#6a6a6a" font-size="13">native_mmvq と iq_kernels が使う</text>
+
+  <rect x="500" y="414" width="460" height="72" fill="#ffffff" stroke="#1f4e79" stroke-width="1.2"/>
+  <text x="518" y="436" fill="#1f4e79" font-size="13" font-weight="700">d の決め方が 2 通りある</text>
+  <text x="518" y="458" fill="#232323" font-size="13">Q8_K は amax/127 を FP32 で（丸めた値を逆算しない）</text>
+  <text x="518" y="478" fill="#7a5c12" font-size="13" font-weight="700">→ 80 ブロック中 18 個で差が出た</text>
+
+  <!-- i-quant sizes -->
+  <text x="40" y="526" fill="#9e2b25" font-size="15" font-weight="700">i-quant / K-quant のブロックサイズ（prefill の復号に必要）</text>
+  <g font-size="13">
+    <rect x="40" y="540" width="130" height="34" fill="#f4f1e7" stroke="#1f4e79" stroke-width="0.8"/><text x="52" y="562" fill="#4f5d00">iq2_xxs 66</text>
+    <rect x="176" y="540" width="130" height="34" fill="#f4f1e7" stroke="#1f4e79" stroke-width="0.8"/><text x="188" y="562" fill="#4f5d00">iq2_xs 74</text>
+    <rect x="312" y="540" width="130" height="34" fill="#f4f1e7" stroke="#1f4e79" stroke-width="0.8"/><text x="324" y="562" fill="#4f5d00">iq2_s 82</text>
+    <rect x="448" y="540" width="130" height="34" fill="#f4f1e7" stroke="#1f4e79" stroke-width="0.8"/><text x="460" y="562" fill="#4f5d00">iq3_xxs 98</text>
+    <rect x="584" y="540" width="130" height="34" fill="#f4f1e7" stroke="#1f4e79" stroke-width="0.8"/><text x="596" y="562" fill="#4f5d00">iq3_s 110</text>
+    <rect x="720" y="540" width="130" height="34" fill="#f4f1e7" stroke="#1f4e79" stroke-width="0.8"/><text x="732" y="562" fill="#4f5d00">iq4_xs 136</text>
+    <rect x="856" y="540" width="104" height="34" fill="#f4f1e7" stroke="#9e2b25" stroke-width="0.8"/><text x="868" y="562" fill="#9e2b25">q2_0 18</text>
+  </g>
+
+  <!-- decode loop -->
+  <text x="40" y="616" fill="#9e2b25" font-size="15" font-weight="700">decode の内側（s_gemv）</text>
+  <rect x="40" y="630" width="440" height="150" fill="#ffffff" stroke="#1f4e79" stroke-width="1.2"/>
+  <text x="58" y="654" fill="#1f4e79" font-size="13" font-weight="700">1 スレッド = 1 出力行</text>
+  <text x="58" y="676" fill="#232323" font-size="13">for j in n_in/64:</text>
+  <text x="78" y="696" fill="#232323" font-size="13">codes ← 16 B（uint32 × 4 / uint16 / uint8）</text>
+  <text x="78" y="716" fill="#232323" font-size="13">for e in 64: acc += (code+bias)·d · x[j·64+e]</text>
+  <text x="78" y="736" fill="#7a5c12" font-size="13" font-weight="700">活性ブロックは 16 回に 1 回だけ確保</text>
+  <text x="78" y="756" fill="#6a6a6a" font-size="13">（i%256 が 16 の倍数 → 除算 1 回）</text>
+
+  <rect x="500" y="630" width="460" height="150" fill="#ffffff" stroke="#4f5d00" stroke-width="1.2"/>
+  <text x="518" y="654" fill="#4f5d00" font-size="13" font-weight="700">prefill の内側（int8 テンソルコア）</text>
+  <text x="518" y="676" fill="#232323" font-size="13">Σ w·x = d_w·d_x·(Σ q·a − Σ a)</text>
+  <text x="518" y="698" fill="#232323" font-size="13">Σ q·a は __dp4a（int8×int8、|·| &lt; 2²²）</text>
+  <text x="518" y="720" fill="#7a5c12" font-size="13" font-weight="700">as_float(0x4B400000 + dot) = 1.5·2²³ + dot</text>
+  <text x="518" y="742" fill="#7a5c12" font-size="13" font-weight="700">+ c = -(1.5·2²³ + Σa) → 丸め無しで整数差</text>
+  <text x="518" y="764" fill="#6a6a6a" font-size="13">整数加算 2 + float 加算 2 + 積和 3 / 64 ブロック</text>
+
+  <text x="40" y="816" fill="#6a6a6a" font-size="13">※ コード幅が 2/4/8 のどれでも「復号してすぐ積む」構造は同じ。違うのは 1 語に何要素入るかだけ。</text>
+  <text x="40" y="840" fill="#9e2b25" font-size="13" font-weight="700">※ 契約違反は exit(1): code_bits==2 なら Q8_0、それ以外の量子化型は Q8_K（間違えると GEMV 誤差 0.6–1.4%）</text>
+</svg>

@@ -1,0 +1,144 @@
+<!doctype html>
+<html lang="ja">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width,initial-scale=1">
+<title>Strata CUDA ソース読解</title>
+<style>
+  :root{
+    --cyan:#00f0ff; --mag:#ff2a6d; --acid:#d6ff2e;
+    --ink:#07090d; --panel:#0b1119; --line:#1d2a36;
+    --txt:#c9d4e0; --dim:#8fa3b8; --lbl:#ffe066;
+  }
+  *{box-sizing:border-box}
+  html,body{margin:0;padding:0;background:var(--ink);color:var(--txt);
+    font-family:"JetBrains Mono","SF Mono",ui-monospace,Menlo,monospace;
+    font-size:13px;line-height:1.75;-webkit-font-smoothing:antialiased}
+  body::before{content:"";position:fixed;inset:0;pointer-events:none;z-index:9;
+    background:repeating-linear-gradient(180deg,rgba(0,240,255,.045) 0 1px,transparent 1px 4px)}
+  body::after{content:"";position:fixed;inset:0;pointer-events:none;z-index:8;
+    background:radial-gradient(circle at 50% 0%,rgba(0,240,255,.07),transparent 60%),
+               radial-gradient(circle at 90% 100%,rgba(255,42,109,.06),transparent 55%)}
+  .wrap{max-width:1040px;margin:0 auto;padding:40px 28px 72px;position:relative;z-index:10}
+  .tag{display:inline-block;font-size:13px;font-weight:700;letter-spacing:2px;color:var(--acid);
+    border:1px solid var(--acid);padding:3px 10px;
+    clip-path:polygon(0 0,calc(100% - 8px) 0,100% 8px,100% 100%,8px 100%,0 calc(100% - 8px))}
+  h1{font-size:30px;letter-spacing:6px;margin:18px 0 6px;color:var(--cyan);
+    text-shadow:0 0 18px rgba(0,240,255,.45)}
+  h1 small{display:block;font-size:13px;letter-spacing:3px;color:var(--mag);margin-top:8px}
+  .sub{color:var(--txt);font-size:14px;max-width:760px;margin:10px 0 0}
+  .sub b{color:var(--lbl)}
+  hr.rule{border:0;height:1px;background:linear-gradient(90deg,var(--cyan),var(--mag) 55%,transparent);margin:28px 0 26px}
+  .stats{display:grid;grid-template-columns:repeat(4,1fr);gap:12px;margin-top:26px}
+  .stat{background:var(--panel);border:1px solid var(--line);padding:14px 16px;
+    clip-path:polygon(0 0,calc(100% - 10px) 0,100% 10px,100% 100%,10px 100%,0 calc(100% - 10px))}
+  .stat .n{font-size:24px;font-weight:700;color:var(--cyan);letter-spacing:1px;line-height:1.2}
+  .stat .k{font-size:13px;font-weight:700;color:var(--lbl);margin-top:4px}
+  .stat .d{font-size:13px;color:var(--dim)}
+  h2{font-size:15px;letter-spacing:3px;color:var(--cyan);margin:44px 0 4px;font-weight:700}
+  h2 span{color:var(--mag)}
+  .hint{color:var(--dim);font-size:13px;margin:0 0 16px}
+  .grid{display:grid;grid-template-columns:repeat(3,1fr);gap:12px}
+  a.card{display:block;text-decoration:none;background:var(--panel);border:1px solid var(--line);
+    padding:14px 16px 16px;color:var(--txt);transition:.15s;
+    clip-path:polygon(0 0,calc(100% - 12px) 0,100% 12px,100% 100%,12px 100%,0 calc(100% - 12px))}
+  a.card:hover{border-color:var(--cyan);background:#0e1a24;box-shadow:0 0 0 1px rgba(0,240,255,.25),0 0 24px rgba(0,240,255,.18)}
+  a.card .num{font-size:13px;font-weight:700;color:var(--mag);letter-spacing:2px}
+  a.card .t{font-size:14px;font-weight:700;color:var(--lbl);margin:6px 0 6px;letter-spacing:.5px}
+  a.card .d{font-size:13px;color:var(--dim);line-height:1.6}
+  a.card .sz{font-size:13px;color:var(--acid);margin-top:8px;font-weight:700}
+  .gallery{display:grid;grid-template-columns:1fr;gap:16px}
+  a.fig{display:block;text-decoration:none;background:#05080c;border:1px solid var(--line);padding:10px;transition:.15s;
+    clip-path:polygon(0 0,calc(100% - 12px) 0,100% 12px,100% 100%,12px 100%,0 calc(100% - 12px))}
+  a.fig:hover{border-color:var(--acid);box-shadow:0 0 22px rgba(214,255,46,.16)}
+  a.fig img{width:100%;display:block;background:#07090d}
+  a.fig .cap{font-size:13px;color:var(--lbl);font-weight:700;margin-top:8px}
+  a.fig .cd{font-size:13px;color:var(--dim);margin-top:2px}
+  ol.steps{margin:8px 0 0;padding-left:20px}
+  ol.steps li{margin:6px 0;color:var(--txt)}
+  ol.steps b{color:var(--lbl)}
+  code{background:#12202b;color:var(--acid);padding:1px 6px;border:1px solid var(--line);font-size:13px}
+  footer{margin-top:48px;padding-top:18px;border-top:1px solid var(--line);color:var(--dim);font-size:13px}
+  footer b{color:var(--lbl)}
+  .topnav{display:flex;justify-content:space-between;align-items:center;font-size:13px;margin-bottom:14px}
+  .topnav a{color:var(--dim);text-decoration:none;border:1px solid var(--line);padding:4px 10px;clip-path:polygon(0 0,calc(100% - 6px) 0,100% 6px,100% 100%,6px 100%,0 calc(100% - 6px))}
+  .topnav a:hover{color:var(--cyan);border-color:var(--cyan)}
+  .topnav .r{color:var(--dim)}
+</style>
+</head>
+<body>
+<div class="wrap">
+  <div class="topnav"><a href="/hub/">← Hub</a><span class="r">STRATA 読解 / 全 9 章 + 図 7 枚</span></div>
+  <span class="tag">STRATA v0.1.49 / HEAD 61b3fb5</span>
+  <h1>STRATA CUDA ソース読解<small>1 枚の GPU で 125B MoE を回すエンジンを、行番号から読む</small></h1>
+  <p class="sub">対象は <b>Qwen3.8-Flash-Next 125B</b>（48 層 × 512 expert = <b>24,576</b>、top-10/token）を動かす
+  <b>Strata</b> の CUDA/HIP 実装。<b>57 ファイル / 34,312 行</b>を 9 章に分け、
+  全章に「なぜそう書くのか」の解説と、データがどこをどう動くかの図を付けた。</p>
+  <div class="stats">
+    <div class="stat"><div class="n">57</div><div class="k">.cu ファイル</div><div class="d">cuda 45 / prefill 9 / core 3</div></div>
+    <div class="stat"><div class="n">34,312</div><div class="k">行</div><div class="d">最大 iq_kernels.cu 3,614</div></div>
+    <div class="stat"><div class="n">24,576</div><div class="k">expert</div><div class="d">48 層 × 512、top-10/token</div></div>
+    <div class="stat"><div class="n">2.4–3.2</div><div class="k">tok / pass</div><div class="d">MTP 3 枚 + lookup 最大 5</div></div>
+  </div>
+  <hr class="rule">
+
+  <h2>本文 <span>// 00–08</span></h2>
+  <p class="hint">上から順でもよいが、まず 00 と 08 を読むと全体の地図ができる。</p>
+  <div class="grid">
+    <a class="card" href="docs/00_overview.html"><div class="num">00</div><div class="t">総覧 — 何をどう走らせるのか</div>
+      <div class="d">125B MoE を 1 枚で回す分割（VRAM / RAM / SSD）と、数字の地図。</div><div class="sz">12 KB</div></a>
+    <a class="card" href="docs/01_memory.html"><div class="num">01</div><div class="t">メモリ階層 — SSD から SMEM まで</div>
+      <div class="d">4 層の置き場所、pinned リング、doorbell、帯域の梯子。</div><div class="sz">10 KB</div></a>
+    <a class="card" href="docs/02_quant.html"><div class="num">02</div><div class="t">量子化 — 13 形式が 3 つのコード幅</div>
+      <div class="d">S2（Q2_0）の 20 バイト・ブロック、Q8 系、i-quant の配置。</div><div class="sz">6.9 KB</div></a>
+    <a class="card" href="docs/03_decode_gemv.html"><div class="num">03</div><div class="t">Decode GEMV — 31.64 GiB を 1 トークンで</div>
+      <div class="d">s_gemv.cu 全行注釈。1 スレッド 1 出力行の内側。</div><div class="sz">16.5 KB</div></a>
+    <a class="card" href="docs/04_moe.html"><div class="num">04</div><div class="t">MoE — 512 個から 10 個を選ぶ</div>
+      <div class="d">router、3 つの行き先、combine、実測タイミング。</div><div class="sz">21 KB</div></a>
+    <a class="card" href="docs/05_attention_gdn.html"><div class="num">05</div><div class="t">注意機構と GDN — 選ぶ attention、状態の再帰</div>
+      <div class="d">qsa / indexer / GDN の再帰、KV の 3 層。</div><div class="sz">21 KB</div></a>
+    <a class="card" href="docs/06_prefill.html"><div class="num">06</div><div class="t">Prefill — 計算律速に切り替わる世界</div>
+      <div class="d">8,192 チャンク、融合カタログ、magic float、parity の証明。</div><div class="sz">17.9 KB</div></a>
+    <a class="card" href="docs/07_misc.html"><div class="num">07</div><div class="t">残り — sampler / verify / PLE / GR</div>
+      <div class="d">Philox、MTP 検証、PLE の 3 経路、GR、runtime の毒。</div><div class="sz">17 KB</div></a>
+    <a class="card" href="docs/08_catalog.html"><div class="num">08</div><div class="t">目録 — 読む順と事件簿</div>
+      <div class="d">全 57 ファイルの表、「1 ファイル 1 事件」、章へのリンク。</div><div class="sz">11.5 KB</div></a>
+  </div>
+
+  <h2>図 <span>// 7 枚</span></h2>
+  <p class="hint">PNG。1 枚ずつ原寸で並べた（クリックで単体表示）。文字は 13px 以上で描いてある。</p>
+  <div class="gallery">
+    <a class="fig" href="diagrams/png/memory-hierarchy.png"><img src="diagrams/png/memory-hierarchy.png" alt="メモリ階層">
+      <div class="cap">01 メモリ階層</div><div class="cd">SSD → pinned RAM → VRAM → SMEM。帯域の梯子と doorbell の逆流。</div></a>
+    <a class="fig" href="diagrams/png/token-pipeline.png"><img src="diagrams/png/token-pipeline.png" alt="トークンパイプライン">
+      <div class="cap">00 1 トークン・1 レイヤー</div><div class="cd">pre / post の切れ目、GPU と CPU が重なる区間、×48。</div></a>
+    <a class="fig" href="diagrams/png/expert-flow.png"><img src="diagrams/png/expert-flow.png" alt="expert の流れ">
+      <div class="cap">04 expert の振り分け</div><div class="cd">router → (id,w)×10 → 3 つの行き先 → combine。実測タイミング付き。</div></a>
+    <a class="fig" href="diagrams/png/kv-cache.png"><img src="diagrams/png/kv-cache.png" alt="KV キャッシュ">
+      <div class="cap">05 KV キャッシュ 3 層（+ 01 メモリ階層）</div><div class="cd">ページ計算式、hot 64K、q8/q4 圧縮、書き込み・読み出し経路。</div></a>
+    <a class="fig" href="diagrams/png/quant-block.png"><img src="diagrams/png/quant-block.png" alt="量子化ブロック">
+      <div class="cap">02 量子化ブロック</div><div class="cd">S2 の 20 バイト、LSB 先の 2 ビット、decode と prefill の内側。</div></a>
+    <a class="fig" href="diagrams/png/streams-doorbell.png"><img src="diagrams/png/streams-doorbell.png" alt="ストリームと doorbell">
+      <div class="cap">01 2 グラフと doorbell</div><div class="cd">なぜ 2 つに割るのか、キャプチャ監査の一般則。</div></a>
+    <a class="fig" href="diagrams/png/prefill.png"><img src="diagrams/png/prefill.png" alt="prefill">
+      <div class="cap">06 prefill</div><div class="cd">チャンク → 密 GEMM → router → expert GEMM 4 系統 → magic float。</div></a>
+  </div>
+
+  <h2>読み方 <span>// 3 手順</span></h2>
+  <ol class="steps">
+    <li><b>00 と 08 を先に読む。</b>どのファイルが何を担当しているかの表を持ってから本文に入ると、迷子にならない。</li>
+    <li><b>図 → 該当章 → ソース。</b>図で「どこからどこへ何が動くか」を掴み、章で理由を読み、最後に <code>.cu</code> を開く。</li>
+    <li><b>数値は暗記しない。</b>帯域・温度・ブロックサイズは環境で変わる。覚えるのは<b>構造</b>（層の数、行き先の種類、切れ目）だけ。</li>
+  </ol>
+
+  <footer>
+    <p><b>出典</b>: github.com/Niko1221/Strata HEAD <code>61b3fb5</code>（v0.1.49）。
+    本文中の行番号・定数はこのリビジョンのもの。上流が動いたら <code>docs/08_catalog.md</code> の表を突き合わせて更新する。</p>
+    <p><b>注意</b>: ここに書いたのは「読んで分かったこと」であり、公式ドキュメントではない。
+    推測で埋めた箇所は本文で「推測」と明記した。<b>Strata</b> は strata（192.168.50.120）上の
+    <code>~/Strata</code> にあり、実運用は別フォーク（Abyss）が担っている点に注意。</p>
+  </footer>
+</div>
+</body>
+</html>
+

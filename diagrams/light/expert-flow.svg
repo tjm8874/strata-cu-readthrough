@@ -1,0 +1,82 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 1000 720" width="1000" height="720" font-family="'JetBrains Mono','SF Mono',ui-monospace,monospace">
+  <defs>
+    <linearGradient id="bg" x1="0" y1="0" x2="1" y2="1"><stop offset="0" stop-color="#ffffff"/><stop offset="1" stop-color="#faf8f2"/></linearGradient>
+    <marker id="ac" markerWidth="9" markerHeight="9" refX="7" refY="4.5" orient="auto"><path d="M0,0 L9,4.5 L0,9 z" fill="#1f4e79"/></marker>
+    <marker id="am" markerWidth="9" markerHeight="9" refX="7" refY="4.5" orient="auto"><path d="M0,0 L9,4.5 L0,9 z" fill="#9e2b25"/></marker>
+    <marker id="aa" markerWidth="9" markerHeight="9" refX="7" refY="4.5" orient="auto"><path d="M0,0 L9,4.5 L0,9 z" fill="#4f5d00"/></marker>
+  </defs>
+  <rect width="1000" height="720" fill="url(#bg)"/>  <text x="40" y="46" fill="#1f4e79" font-size="20" font-weight="700" letter-spacing="4">EXPERT FLOW</text>
+  <text x="40" y="70" fill="#7a5c12" font-size="13" font-weight="700">24,576 experts（48 層 × 512）、1 トークンあたり top-10</text>
+  <text x="960" y="46" text-anchor="end" fill="#9e2b25" font-size="13" font-weight="700">STRATA / 04_moe</text>
+
+  <!-- router -->
+  <rect x="60" y="100" width="250" height="110" fill="#ffffff" stroke="#9e2b25" stroke-width="1.6"/>
+  <text x="78" y="124" fill="#9e2b25" font-size="13" font-weight="700">router_top10</text>
+  <text x="78" y="148" fill="#232323" font-size="13">x → BF16 → 512 logits</text>
+  <text x="78" y="168" fill="#232323" font-size="13">softmax（全 expert）</text>
+  <text x="78" y="188" fill="#7a5c12" font-size="13" font-weight="700">安定 argsort → 10 個</text>
+  <text x="78" y="208" fill="#6a6a6a" font-size="13">同点は添字の小さい方</text>
+
+  <!-- 10 ids -->
+  <line x1="310" y1="155" x2="380" y2="155" stroke="#9e2b25" stroke-width="2" marker-end="url(#am)"/>
+  <rect x="382" y="118" width="150" height="76" fill="#ffffff" stroke="#9e2b25" stroke-width="1.2"/>
+  <text x="398" y="140" fill="#7a5c12" font-size="13" font-weight="700">(id, w) × 10</text>
+  <text x="398" y="162" fill="#232323" font-size="13">w の和で正規化</text>
+  <text x="398" y="182" fill="#232323" font-size="13">clamp 2⁻¹⁴</text>
+
+  <!-- hit_select -->
+  <line x1="532" y1="155" x2="600" y2="155" stroke="#9e2b25" stroke-width="2" marker-end="url(#am)"/>
+  <rect x="602" y="112" width="330" height="88" fill="#ffffff" stroke="#1f4e79" stroke-width="1.4"/>
+  <text x="620" y="134" fill="#1f4e79" font-size="13" font-weight="700">hit_select（1 ワープ / ≤128 entry 版も）</text>
+  <text x="620" y="156" fill="#232323" font-size="13">VRAM キャッシュに居るか？ → 3 つの行き先へ</text>
+  <text x="620" y="178" fill="#4f5d00" font-size="13" font-weight="700">entry = 「グループ」単位で渡す</text>
+
+  <!-- three destinations -->
+  <line x1="700" y1="200" x2="700" y2="250" stroke="#4f5d00" stroke-width="2" marker-end="url(#aa)"/>
+  <line x1="700" y1="200" x2="420" y2="250" stroke="#1f4e79" stroke-width="1.8" marker-end="url(#ac)"/>
+  <line x1="700" y1="200" x2="150" y2="250" stroke="#9e2b25" stroke-width="1.8" marker-end="url(#am)"/>
+
+  <rect x="60" y="252" width="230" height="140" fill="#ffffff" stroke="#9e2b25" stroke-width="1.4"/>
+  <text x="78" y="274" fill="#9e2b25" font-size="13" font-weight="700">① RAM の CPU プール</text>
+  <text x="78" y="296" fill="#232323" font-size="13">ミスした expert の本体</text>
+  <text x="78" y="316" fill="#232323" font-size="13">AVX-512 / AVX2 で計算</text>
+  <text x="78" y="338" fill="#7a5c12" font-size="13" font-weight="700">結果は add_hits で合流</text>
+  <text x="78" y="360" fill="#6a6a6a" font-size="13">int8 ドット + チャンク float</text>
+  <text x="78" y="380" fill="#6a6a6a" font-size="13">（CPU と和の順序が違う）</text>
+
+  <rect x="320" y="252" width="230" height="140" fill="#ffffff" stroke="#1f4e79" stroke-width="1.4"/>
+  <text x="338" y="274" fill="#1f4e79" font-size="13" font-weight="700">② VRAM の expert cache</text>
+  <text x="338" y="296" fill="#232323" font-size="13">適応型（ホットを学習）</text>
+  <text x="338" y="316" fill="#232323" font-size="13">≈ 700 experts / GiB</text>
+  <text x="338" y="338" fill="#7a5c12" font-size="13" font-weight="700">gu_grouped_kernel</text>
+  <text x="338" y="360" fill="#6a6a6a" font-size="13">1 グループ 1 blob ポインタ</text>
+  <text x="338" y="380" fill="#6a6a6a" font-size="13">行ごとに 1 回だけ読む</text>
+
+  <rect x="580" y="252" width="230" height="140" fill="#ffffff" stroke="#4f5d00" stroke-width="1.4"/>
+  <text x="598" y="274" fill="#4f5d00" font-size="13" font-weight="700">③ ピア GPU</text>
+  <text x="598" y="296" fill="#232323" font-size="13">NVLink / P2P がある場合のみ</text>
+  <text x="598" y="316" fill="#232323" font-size="13">remote_expert_opt.cu</text>
+  <text x="598" y="338" fill="#7a5c12" font-size="13" font-weight="700">PCIe 越しなら大抵負ける</text>
+  <text x="598" y="360" fill="#6a6a6a" font-size="13">→ 既定は ①② の 2 択</text>
+
+  <!-- combiner -->
+  <path d="M175,392 C175,440 300,450 400,470" fill="none" stroke="#9e2b25" stroke-width="1.6" marker-end="url(#am)"/>
+  <path d="M435,392 C435,430 440,450 445,470" fill="none" stroke="#1f4e79" stroke-width="1.6" marker-end="url(#ac)"/>
+  <rect x="330" y="472" width="340" height="96" fill="#ffffff" stroke="#1f4e79" stroke-width="1.6"/>
+  <text x="348" y="494" fill="#1f4e79" font-size="13" font-weight="700">combine / combine_k10_vec4</text>
+  <text x="348" y="516" fill="#232323" font-size="13">out = Σ wᵢ · expert_i(x)</text>
+  <text x="348" y="538" fill="#7a5c12" font-size="13" font-weight="700">+ shared expert（スカラ倍して加算）</text>
+  <text x="348" y="558" fill="#6a6a6a" font-size="13">S26 LFUSE: shared のスケールを combine に融合</text>
+
+  <!-- timing bar -->
+  <text x="40" y="606" fill="#9e2b25" font-size="13" font-weight="700" letter-spacing="2">TIMING（round 218 実測、1 トークン・1 層）</text>
+  <rect x="40" y="618" width="920" height="26" fill="#f4f1e7" stroke="#9e2b25" stroke-width="1"/>
+  <rect x="40" y="618" width="61" height="26" fill="#1f4e79" opacity="0.85"/>
+  <rect x="101" y="618" width="764" height="26" fill="#9e2b25" opacity="0.55"/>
+  <rect x="865" y="618" width="95" height="26" fill="#4f5d00" opacity="0.35"/>
+  <text x="40" y="664" fill="#1f4e79" font-size="13" font-weight="700">■ bf16 gemv 0.270 ms（6%）</text>
+  <text x="290" y="664" fill="#9e2b25" font-size="13" font-weight="700">■ router_top10 3.387 ms（83%）</text>
+  <text x="620" y="664" fill="#4f5d00" font-size="13" font-weight="700">■ 残り 0.42 ms（combine 等）</text>
+  <text x="40" y="690" fill="#7a5c12" font-size="13" font-weight="700">×48 層 = 163 ms / 289 ms のトークン時間 = 56% を router が占めていた</text>
+  <text x="40" y="712" fill="#4f5d00" font-size="13" font-weight="700">→ 修正後: exp は 1 回だけ並列に、選択は k 回の argmax、p[e] は 1 回だけ</text>
+</svg>

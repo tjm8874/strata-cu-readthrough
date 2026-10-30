@@ -1,0 +1,191 @@
+<!doctype html><html lang="ja"><head><meta charset="utf-8"><meta name="viewport" content="width=device-width,initial-scale=1"><title>01. メモリ階層 — SSD から SMEM まで</title><style>:root{--cyan:#00f0ff;--mag:#ff2a6d;--acid:#d6ff2e;--ink:#07090d;--panel:#0b1119;--line:#1d2a36;--txt:#c9d4e0;--dim:#95a9bd;--lbl:#ffe066}
+*{box-sizing:border-box}
+html,body{margin:0;background:var(--ink);color:var(--txt);font-family:"JetBrains Mono","SF Mono",ui-monospace,Menlo,monospace;font-size:14px;line-height:1.85}
+body::before{content:"";position:fixed;inset:0;pointer-events:none;z-index:9;background:repeating-linear-gradient(180deg,rgba(0,240,255,.04) 0 1px,transparent 1px 4px)}
+.wrap{max-width:880px;margin:0 auto;padding:28px 24px 80px;position:relative;z-index:10}
+.nav{display:flex;justify-content:space-between;gap:12px;font-size:13px;border-bottom:1px solid var(--line);padding-bottom:10px;margin-bottom:26px}
+.nav a{color:var(--dim);text-decoration:none;border-bottom:1px solid transparent}
+.nav a:hover{color:var(--cyan);border-color:var(--cyan)}
+h1{font-size:23px;line-height:1.5;color:var(--cyan);letter-spacing:1px;margin:6px 0 18px;text-shadow:0 0 16px rgba(0,240,255,.35)}
+h2{font-size:17px;color:var(--lbl);margin:34px 0 10px;padding-left:10px;border-left:3px solid var(--mag);line-height:1.6}
+h3{font-size:15px;color:var(--acid);margin:24px 0 8px}
+p{margin:12px 0}
+a{color:var(--cyan)}
+strong{color:var(--lbl)}
+code{background:#12202b;color:var(--acid);padding:1px 5px;border:1px solid var(--line);font-size:13px;word-break:break-word}
+pre{background:#05080c;border:1px solid var(--line);padding:14px 16px;overflow-x:auto;font-size:13px;line-height:1.65}
+pre code{background:none;border:0;padding:0;color:#d7e6f2;font-size:13px}
+blockquote{margin:16px 0;padding:10px 16px;border-left:3px solid var(--cyan);background:rgba(0,240,255,.05);color:var(--txt)}
+blockquote p{margin:4px 0}
+table{border-collapse:collapse;width:100%;margin:16px 0;font-size:13px;display:block;overflow-x:auto}
+th,td{border:1px solid var(--line);padding:7px 10px;text-align:left;vertical-align:top}
+th{background:#101c26;color:var(--lbl);white-space:nowrap}
+tr:nth-child(even) td{background:#0a1219}
+ul,ol{padding-left:22px}
+li{margin:5px 0}
+hr{border:0;height:1px;background:linear-gradient(90deg,var(--cyan),var(--mag) 60%,transparent);margin:30px 0}
+.figrow{display:flex;flex-wrap:wrap;gap:12px;margin:18px 0}
+.figlink{display:block;flex:1 1 320px;text-decoration:none;background:#05080c;border:1px solid var(--line);padding:8px}
+.figlink img{width:100%;display:block}
+.figcap{display:block;font-size:13px;color:var(--lbl);font-weight:700;margin-top:6px}
+footer{margin-top:44px;padding-top:14px;border-top:1px solid var(--line);font-size:13px;color:var(--dim)}
+footer a{color:var(--dim)}</style></head><body><div class="wrap"><div class="nav"><a href="../index.html">← 目次 / 図一覧</a><span>STRATA 読解 01 / 08</span></div><article><h1>01. メモリ階層 — SSD から SMEM まで</h1>
+<div class="figrow"><a class="figlink" href="../diagrams/png/memory-hierarchy.png"><img src="../diagrams/png/memory-hierarchy.png" alt="01 メモリ階層 — SSD → RAM → VRAM → SMEM"><span class="figcap">01 メモリ階層 — SSD → RAM → VRAM → SMEM</span></a></div><p>125B/2bit のパックは <strong>38 GiB</strong>、PLE テーブルは <strong>28.8 GB</strong>。どちらも VRAM には入らない。
+この章は「どのバイトが、どの階層に、どういう経路で移動するか」を追う。</p>
+<hr>
+<h2>1. 4 つの階層</h2>
+<pre><code>┌──────────────────────────────────────────────────────────────────────┐
+│ SSD / NVMe                                            38 GiB + 28.8GB│
+│   ├─ モデルパック (GGUF 相当, mmap しない)                           │
+│   └─ PLE テーブル (28.8GB, トークンごとに数行だけ unbuffered read)   │
+└───────────────┬──────────────────────────────────────────────────────┘
+                │ 起動時に一度だけ / PLE は毎トークン数行
+┌───────────────▼──────────────────────────────────────────────────────┐
+│ システム RAM (pinned / mlock)                          ≒ 40–70 GiB    │
+│   ├─ 24,576 expert 全部（常駐。追い出さない）                         │
+│   ├─ PCIe リング用バッファ（BATCHED_DMA）                            │
+│   ├─ ドアベル（mapped pinned memory, GPU から書ける）                │
+│   └─ KV のホスト側ミラー（64K 超の cold 部分）                       │
+└───────────────┬──────────────────────────────────────────────────────┘
+                │ PCIe Gen5 x16 (H2D / D2H, DMA)
+┌───────────────▼──────────────────────────────────────────────────────┐
+│ VRAM 12–24 GiB                                                       │
+│   ├─ attention / GDN の重み（層ごとに常駐）                          │
+│   ├─ GR 重み、router、shared expert、output head、MTP 層            │
+│   ├─ KV cache（ホット部分のみ）                                      │
+│   ├─ expert cache（適応型。約 700 expert / GiB）                     │
+│   └─ 作業バッファ（活性の量子化イメージ、combine 用）                │
+└───────────────┬──────────────────────────────────────────────────────┘
+                │ カーネル内ロード
+┌───────────────▼──────────────────────────────────────────────────────┐
+│ SMEM / レジスタ (1 SM ≈ 228 KB SMEM, 65536 regs)                     │
+│   ├─ iq4nl コードブック 16B（全 GEMV カーネル共通の定番）            │
+│   ├─ attention のスコア配列（1 head あたり最大 8 KB）                │
+│   └─ prefill のタイル（cp.async で二重バッファ）                     │
+└──────────────────────────────────────────────────────────────────────┘
+</code></pre>
+<h3>帯域で見ると何が効くか</h3>
+<p>decode の 1 トークンは、<strong>48 層 × (attention 重み + top-10 expert)</strong> を読む。
+top-10 expert は 1 層あたり 10/24,576 だが、RAM 側は 10 expert 分を CPU が読む。
+つまり 1 トークンあたりの実効読み出しは「数十 GB/s 級の RAM 帯域 + VRAM 帯域」の合成で、
+<strong>どちらのパスも遊ばせないこと</strong>が速度の全てになる。これが第 0 章の「分割グラフ」の理由。</p>
+<hr>
+<h2>2. expert の 3 つの居場所と移動</h2>
+<div class="figrow"><a class="figlink" href="../diagrams/png/expert-flow.png"><img src="../diagrams/png/expert-flow.png" alt="04 expert の振り分け — router → 3 経路 → combine"><span class="figcap">04 expert の振り分け — router → 3 経路 → combine</span></a></div><p>top-10 に選ばれた expert は、その瞬間に 3 つのどれかにいる:</p>
+<table>
+<thead>
+<tr>
+<th>居場所</th>
+<th>誰が計算する</th>
+<th>コスト</th>
+</tr>
+</thead>
+<tbody><tr>
+<td><strong>A. VRAM 常駐</strong>（expert cache ヒット）</td>
+<td>GPU（<code>s2_expert_grouped.cu</code>）</td>
+<td>最速。VRAM 帯域のみ</td>
+</tr>
+<tr>
+<td><strong>B. RAM（キャッシュミス）</strong></td>
+<td>CPU プール（AVX-512/AVX2）</td>
+<td>PCIe 転送ゼロ。CPU コア数に律速</td>
+</tr>
+<tr>
+<td><strong>C. ピア GPU</strong>（2 枚目）</td>
+<td>ピアの GPU</td>
+<td>P2P 転送。<code>SECOND_GPU.md</code>, <code>peer_experts.cpp</code></td>
+</tr>
+</tbody></table>
+<p><strong>B が本エンジンの発明</strong>である。普通のオフロードは「expert を GPU に持ってきて計算する」ので
+PCIe がボトルネックになる。Strata は「<strong>持ってこない。CPU で計算して結果だけ返す</strong>」。
+そのため VRAM 側は attention に専念でき、PCIe は prefill のリングに空けられる。</p>
+<h3>cache の学習</h3>
+<p><code>src/core/expert_cache.cpp</code> が「どの expert がよく選ばれるか」を学習し、VRAM の空きに応じて
+約 700 expert/GiB の密度で常駐させる。学習の材料は routing の履歴で、<strong>層ごとに別々</strong>に持つ
+（層によって偏りが全く違うため）。</p>
+<h3>移動の実装</h3>
+<ul>
+<li><code>src/core/pinned.cu</code>（800 行）: ページロックされたホストバッファの管理。
+<code>cudaHostAlloc</code> + マップ（GPU から直接書ける領域）。ドアベルはここ。</li>
+<li><code>src/core/vmm.cu</code>: 仮想メモリ管理。VRAM の断片化を避けるため、
+あらかじめ確保した領域を「見かけ上」差し替える（物理コピーを減らす）。</li>
+<li><code>src/core/remote_expert_opt.cu</code> と <code>src/kernels/cuda/route_prior.cu</code>:
+ピア GPU / リモート expert のためのルーティング前処理。</li>
+</ul>
+<hr>
+<h2>3. リングバッファ（prefill の expert ストリーム）</h2>
+<p>prefill では top-10 × 8,192 トークン = 数万 expert 参照が発生する。全部を VRAM に置けないので、
+<strong>リング状のバッファに expert を流し込みながら GEMM する</strong>。</p>
+<pre><code>   RAM                                              VRAM
+   ┌──────────────┐    PCIe DMA (batched)   ┌──────────────────┐
+   │ expert slot  │ ──────────────────────▶ │ ring[head]       │
+   │ expert slot  │ ──────────────────────▶ │ ring[head+1]     │
+   │ expert slot  │                         │ ...              │
+   └──────────────┘                         └────────┬─────────┘
+                                                     │ 消費
+                                            ┌────────▼─────────┐
+                                            │ moe_fused / MMQ  │
+                                            └──────────────────┘
+</code></pre>
+<p>リングは 0.1.39b 以降 <strong>バイト単位でサイズ指定</strong>（#583）。環境変数 <code>STRATA_RING_BYTES</code> で調整し、
+<code>--pcie-frac</code>（ブランチ f-142）で「PCIe 帯域のうち何割を expert に割くか」を決める。
+<code>BATCHED_DMA.md</code> に、1 回の DMA を大きくまとめる方が速い理由が書かれている。</p>
+<p>関連: <code>STRATA_PREFILL_CPU_SHARE</code>（CPU に expert を何割回すか）、<code>STRATA_ROUTE_TAIL_SKIP</code>。</p>
+<hr>
+<h2>4. KV キャッシュの 3 層構造</h2>
+<div class="figrow"><a class="figlink" href="../diagrams/png/kv-cache.png"><img src="../diagrams/png/kv-cache.png" alt="05 KV キャッシュ 3 層 — hot 64K / コールド / 圧縮"><span class="figcap">05 KV キャッシュ 3 層 — hot 64K / コールド / 圧縮</span></a></div><ul>
+<li><strong>ホット</strong>: VRAM。直近 64K トークン程度。</li>
+<li><strong>コールド</strong>: ホスト RAM。<code>kv_stream.cu</code> が PCIe リングで必要分だけ戻す。
+<code>KV_PREFETCH</code> で先読み。</li>
+<li><strong>圧縮</strong>: <code>kv_q8.cu</code>（int8）と <code>kv_q4.cu</code>（4bit）。<code>cvec.cu</code> の <code>fwht256</code> は
+Hadamard 回転で外れ値を均してから量子化する（回転しないと量子化誤差が偏る）。</li>
+</ul>
+<p>QSA（疎な注意）では、さらに <strong>indexer</strong> が「どのセルを見るか」を top-k で選ぶ。
+選ばれたセルだけを <code>kv_gather_kernel</code> で集めるので、実効の読み出しは top-k 分で済む。</p>
+<hr>
+<h2>5. PLE（28.8GB の n-gram テーブル）</h2>
+<p><code>--ple-io direct</code>（既定）では、テーブルを <strong>mmap せず O_DIRECT 相当で直接読む</strong>。
+1 トークンあたり数行だけなので、ページキャッシュを汚さない方が得。
+<code>src/kernels/cuda/ple.cu</code> の <code>history_advance_kernel</code> が履歴を進め、
+<code>gnorm_kernel</code> → <code>gate_kernel</code> → <code>conv_kernel</code> の順で PLE の寄与を残差に足す。</p>
+<hr>
+<h2>6. SMEM の使い方（カーネル側の視点）</h2>
+<table>
+<thead>
+<tr>
+<th>用途</th>
+<th>サイズ</th>
+<th>登場ファイル</th>
+</tr>
+</thead>
+<tbody><tr>
+<td>iq4nl コードブック</td>
+<td>16 B</td>
+<td><code>s_gemv.cu</code>（全 GEMV）</td>
+</tr>
+<tr>
+<td>QSA のスコア配列</td>
+<td>最大 8 KB/head（n_ids ≤ 2051）</td>
+<td><code>qsa.cu</code> の <code>qsa_attend</code></td>
+</tr>
+<tr>
+<td>prefill の重みタイル</td>
+<td>数十 KB、二重バッファ</td>
+<td><code>moe_fused_iq.cu</code>, <code>moe_fused.cu</code></td>
+</tr>
+<tr>
+<td>コードブック全体（i-quant）</td>
+<td>数百 B〜数 KB</td>
+<td><code>moe_fused_iq.cu</code></td>
+</tr>
+</tbody></table>
+<blockquote>
+<p><strong>16 バイトの話</strong>が一番おいしい。<code>s_gemv.cu</code> は IQ4_NL のコードブックを
+<code>__constant__</code> から <strong>shared に移して 2.12 倍</strong>にした。理由は「constant メモリは
+<strong>全レーンが同じアドレスを読む</strong>ときに速い。非線形コードブックはレーンごとに違う index を読むので
+最悪のパターン」。この測定（<code>attn_qkv</code> IQ4_XS 10240×2560 で 0.2032ms → 0.0960ms）は
+第 3 章に全文とともに載せてある。</p>
+</blockquote>
+<hr>
+<p><em>次: <a href="02_quant.html">02 量子化フォーマット</a></em></p>
+</article><footer><a href="00_overview.html">← Strata CUDA ソース読解</a> ・ <a href="02_quant.html">02. 量子化フォーマット — 13 形式が 3 つの「コード幅」になる →</a><br>出典: strata:~/Strata HEAD 61b3fb5 (v0.1.49) ／ 図は PNG（1000px 幅）</footer></div></body></html>

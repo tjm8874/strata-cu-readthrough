@@ -1,0 +1,79 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 1000 640" width="1000" height="640" font-family="'JetBrains Mono','SF Mono',ui-monospace,monospace">
+  <defs>
+    <linearGradient id="bg" x1="0" y1="0" x2="1" y2="1"><stop offset="0" stop-color="#07090d"/><stop offset="1" stop-color="#0d1218"/></linearGradient>
+    <pattern id="scan" width="4" height="4" patternUnits="userSpaceOnUse"><rect width="4" height="1" fill="#00f0ff" opacity="0.035"/></pattern>
+    <marker id="ac" markerWidth="9" markerHeight="9" refX="7" refY="4.5" orient="auto"><path d="M0,0 L9,4.5 L0,9 z" fill="#00f0ff"/></marker>
+    <marker id="aa" markerWidth="9" markerHeight="9" refX="7" refY="4.5" orient="auto"><path d="M0,0 L9,4.5 L0,9 z" fill="#d6ff2e"/></marker>
+  </defs>
+  <rect width="1000" height="640" fill="url(#bg)"/><rect width="1000" height="640" fill="url(#scan)"/>
+  <text x="40" y="46" fill="#00f0ff" font-size="20" font-weight="700" letter-spacing="4">STREAMS &amp; DOORBELL</text>
+  <text x="40" y="70" fill="#ffe066" font-size="13" font-weight="700">1 層を 2 つのグラフに割り、CPU と GPU を重ねる</text>
+  <text x="960" y="46" text-anchor="end" fill="#ff2a6d" font-size="13" font-weight="700">STRATA / 01_streams</text>
+
+  <!-- lanes -->
+  <text x="40" y="122" fill="#8fa3b8" font-size="13" font-weight="700">GPU</text>
+  <text x="40" y="242" fill="#8fa3b8" font-size="13" font-weight="700">CPU</text>
+  <line x1="110" y1="132" x2="960" y2="132" stroke="#1d2a36" stroke-width="1"/>
+  <line x1="110" y1="252" x2="960" y2="252" stroke="#1d2a36" stroke-width="1"/>
+
+  <!-- GPU pre -->
+  <rect x="110" y="104" width="210" height="52" fill="#0e1a24" stroke="#00f0ff" stroke-width="1.4"/>
+  <text x="126" y="126" fill="#00f0ff" font-size="13" font-weight="700">block_layer_pre[l]</text>
+  <text x="126" y="146" fill="#c9d4e0" font-size="13">attn → mixer → gr_write</text>
+
+  <!-- doorbell -->
+  <line x1="320" y1="130" x2="352" y2="130" stroke="#d6ff2e" stroke-width="3" marker-end="url(#aa)"/>
+  <text x="330" y="98" fill="#d6ff2e" font-size="13" font-weight="700">🔔</text>
+
+  <!-- GPU shared + cache -->
+  <rect x="356" y="104" width="240" height="52" fill="#0e1a24" stroke="#d6ff2e" stroke-width="1.4"/>
+  <text x="372" y="126" fill="#d6ff2e" font-size="13" font-weight="700">shared expert（+ cache hit）</text>
+  <text x="372" y="146" fill="#c9d4e0" font-size="13">GPU が空かないよう先に走らせる</text>
+
+  <!-- GPU post -->
+  <rect x="640" y="104" width="230" height="52" fill="#0e1a24" stroke="#00f0ff" stroke-width="1.4"/>
+  <text x="656" y="126" fill="#00f0ff" font-size="13" font-weight="700">block_layer_post[l]</text>
+  <text x="656" y="146" fill="#c9d4e0" font-size="13">moe_finish → gr_write</text>
+
+  <!-- CPU pool -->
+  <rect x="356" y="224" width="240" height="52" fill="#1c1220" stroke="#ff2a6d" stroke-width="1.4"/>
+  <text x="372" y="246" fill="#ff2a6d" font-size="13" font-weight="700">CPU プール（ミスした expert）</text>
+  <text x="372" y="266" fill="#c9d4e0" font-size="13">AVX-512 / AVX2、pinned RAM</text>
+
+  <!-- arrows -->
+  <line x1="476" y1="156" x2="476" y2="222" stroke="#d6ff2e" stroke-width="1.6" stroke-dasharray="5 4" marker-end="url(#aa)"/>
+  <line x1="596" y1="224" x2="700" y2="158" stroke="#ff2a6d" stroke-width="1.6" marker-end="url(#ac)"/>
+  <text x="612" y="204" fill="#ffe066" font-size="13" font-weight="700">add_hits</text>
+
+  <!-- timeline labels -->
+  <text x="126" y="182" fill="#8fa3b8" font-size="13">層の前半</text>
+  <text x="372" y="182" fill="#8fa3b8" font-size="13">重なり（ここが速度）</text>
+  <text x="656" y="182" fill="#8fa3b8" font-size="13">層の後半</text>
+
+  <!-- split note -->
+  <rect x="40" y="300" width="920" height="120" fill="#0b1119" stroke="#ff2a6d" stroke-width="1.2"/>
+  <text x="58" y="324" fill="#ff2a6d" font-size="13" font-weight="700">なぜ 2 つに割るのか</text>
+  <text x="58" y="348" fill="#c9d4e0" font-size="13">1 本のグラフにすると CPU の計算を待つ間 GPU が遊ぶ。だから「GPU が CPU を呼ぶ点」で切る。</text>
+  <text x="58" y="370" fill="#c9d4e0" font-size="13">切れ目は moe_route の直後（GPU 側の仕事が尽きる唯一の点）。</text>
+  <text x="58" y="396" fill="#d6ff2e" font-size="13" font-weight="700">shared-early（既定 ON）: shared expert を pre[l] の末尾に移し、CPU プールと同時に走らせる</text>
+  <text x="58" y="414" fill="#8fa3b8" font-size="13">post[l] は combine だけになる（layer_set_shared_early）</text>
+
+  <!-- doorbell detail -->
+  <rect x="40" y="440" width="450" height="160" fill="#0b1119" stroke="#d6ff2e" stroke-width="1.2"/>
+  <text x="58" y="464" fill="#d6ff2e" font-size="13" font-weight="700">doorbell の実装</text>
+  <text x="58" y="488" fill="#c9d4e0" font-size="13">カーネルがマップ済みピンドメモリに seq 番号を書く</text>
+  <text x="58" y="510" fill="#c9d4e0" font-size="13">CPU はその番号をポーリング（イベントではない）</text>
+  <text x="58" y="536" fill="#ff2a6d" font-size="13" font-weight="700">cudaEventRecord はグラフキャプチャ中に黙って捨てられる</text>
+  <text x="58" y="554" fill="#8fa3b8" font-size="13">（round 199 で発覚）→ データなら消えない</text>
+  <text x="58" y="576" fill="#8fa3b8" font-size="13">doorbell_ring / wait / publish</text>
+  <text x="58" y="596" fill="#8fa3b8" font-size="13">publish_res / publish_value</text>
+
+  <rect x="510" y="440" width="450" height="160" fill="#0b1119" stroke="#00f0ff" stroke-width="1.2"/>
+  <text x="528" y="464" fill="#00f0ff" font-size="13" font-weight="700">キャプチャ監査（同じ発想の一般化）</text>
+  <text x="528" y="488" fill="#c9d4e0" font-size="13">引数に per-token の int64 があると、グラフは</text>
+  <text x="528" y="508" fill="#c9d4e0" font-size="13">最初の値を焼き込む → 毎トークン位置 0</text>
+  <text x="528" y="532" fill="#ff2a6d" font-size="13" font-weight="700">症状: 有限で尤もらしいが「文脈が無い」出力</text>
+  <text x="528" y="554" fill="#d6ff2e" font-size="13" font-weight="700">対策: step バッファ（device）に pos / n_kv /</text>
+  <text x="528" y="574" fill="#d6ff2e" font-size="13" font-weight="700">n_bid / width を置き、引数を定数化</text>
+  
+</svg>

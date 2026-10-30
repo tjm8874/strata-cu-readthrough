@@ -1,0 +1,220 @@
+<!doctype html><html lang="ja"><head><meta charset="utf-8"><meta name="viewport" content="width=device-width,initial-scale=1"><title>02. 量子化フォーマット — 13 形式が 3 つの「コード幅」になる</title><style>:root{--cyan:#00f0ff;--mag:#ff2a6d;--acid:#d6ff2e;--ink:#07090d;--panel:#0b1119;--line:#1d2a36;--txt:#c9d4e0;--dim:#95a9bd;--lbl:#ffe066}
+*{box-sizing:border-box}
+html,body{margin:0;background:var(--ink);color:var(--txt);font-family:"JetBrains Mono","SF Mono",ui-monospace,Menlo,monospace;font-size:14px;line-height:1.85}
+body::before{content:"";position:fixed;inset:0;pointer-events:none;z-index:9;background:repeating-linear-gradient(180deg,rgba(0,240,255,.04) 0 1px,transparent 1px 4px)}
+.wrap{max-width:880px;margin:0 auto;padding:28px 24px 80px;position:relative;z-index:10}
+.nav{display:flex;justify-content:space-between;gap:12px;font-size:13px;border-bottom:1px solid var(--line);padding-bottom:10px;margin-bottom:26px}
+.nav a{color:var(--dim);text-decoration:none;border-bottom:1px solid transparent}
+.nav a:hover{color:var(--cyan);border-color:var(--cyan)}
+h1{font-size:23px;line-height:1.5;color:var(--cyan);letter-spacing:1px;margin:6px 0 18px;text-shadow:0 0 16px rgba(0,240,255,.35)}
+h2{font-size:17px;color:var(--lbl);margin:34px 0 10px;padding-left:10px;border-left:3px solid var(--mag);line-height:1.6}
+h3{font-size:15px;color:var(--acid);margin:24px 0 8px}
+p{margin:12px 0}
+a{color:var(--cyan)}
+strong{color:var(--lbl)}
+code{background:#12202b;color:var(--acid);padding:1px 5px;border:1px solid var(--line);font-size:13px;word-break:break-word}
+pre{background:#05080c;border:1px solid var(--line);padding:14px 16px;overflow-x:auto;font-size:13px;line-height:1.65}
+pre code{background:none;border:0;padding:0;color:#d7e6f2;font-size:13px}
+blockquote{margin:16px 0;padding:10px 16px;border-left:3px solid var(--cyan);background:rgba(0,240,255,.05);color:var(--txt)}
+blockquote p{margin:4px 0}
+table{border-collapse:collapse;width:100%;margin:16px 0;font-size:13px;display:block;overflow-x:auto}
+th,td{border:1px solid var(--line);padding:7px 10px;text-align:left;vertical-align:top}
+th{background:#101c26;color:var(--lbl);white-space:nowrap}
+tr:nth-child(even) td{background:#0a1219}
+ul,ol{padding-left:22px}
+li{margin:5px 0}
+hr{border:0;height:1px;background:linear-gradient(90deg,var(--cyan),var(--mag) 60%,transparent);margin:30px 0}
+.figrow{display:flex;flex-wrap:wrap;gap:12px;margin:18px 0}
+.figlink{display:block;flex:1 1 320px;text-decoration:none;background:#05080c;border:1px solid var(--line);padding:8px}
+.figlink img{width:100%;display:block}
+.figcap{display:block;font-size:13px;color:var(--lbl);font-weight:700;margin-top:6px}
+footer{margin-top:44px;padding-top:14px;border-top:1px solid var(--line);font-size:13px;color:var(--dim)}
+footer a{color:var(--dim)}</style></head><body><div class="wrap"><div class="nav"><a href="../index.html">← 目次 / 図一覧</a><span>STRATA 読解 02 / 08</span></div><article><h1>02. 量子化フォーマット — 13 形式が 3 つの「コード幅」になる</h1>
+<div class="figrow"><a class="figlink" href="../diagrams/png/quant-block.png"><img src="../diagrams/png/quant-block.png" alt="02 量子化ブロック — S2 の 20 バイトと decode / prefill の内側"><span class="figcap">02 量子化ブロック — S2 の 20 バイトと decode / prefill の内側</span></a></div><h2>1. なぜ「S2/S4/S8」なのか</h2>
+<p>Qwen3.8-Flash-Next のパックには、量子化形式が <strong>13 種類</strong>混在している。
+層ごとに、テンソルごとに違う（例: <code>attn_qkv</code> は IQ4_XS が 13 層、Q3_K が 18 層、Q2_0 が 1 層、Q4_K が 4 層）。</p>
+<p>これをカーネル側で 13 分岐すると、内側ループに switch が入る。Strata の答えは
+<strong>「コード幅（1 要素あたりのビット数）だけをコンパイル時定数にし、残りは実行時引数にする」</strong>。</p>
+<pre><code class="language-cpp">// include/strata/kernels/s_gemv.hpp
+struct SForm {
+    int   code_bits;     // 2 / 4 / 8   ← これだけテンプレート引数
+    int   code_bias;     // 整数域で足すバイアス（Q2_0 は -1）
+    int   group_elems;   // スケール 1 個が受け持つ要素数（16 / 32 / 64）
+    Codebook codebook;   // Affine | Iq4Nl
+    bool  has_offset;    // Q4_K / Q5_K の min プレーン
+    int   act_kind;      // 0 = Q8_0, 1 = Q8_K  ← 形式から導出できない
+};
+</code></pre>
+<p>3 幅 × コードブック 2 種 × offset 有無 = 実質 12 通りだが、カーネルは
+<code>template &lt;int CODE_BITS&gt;</code> の 3 実体で済む。残りはカーネル引数。</p>
+<p><strong><code>act_kind</code> だけは導出できない</strong>のが罠。<code>Q5_0</code> と <code>Q5_K</code> はコード幅が同じでも
+活性の要求が違い、<code>IQ4_NL</code> と <code>IQ4_XS</code> も同様。だから manifest が明示する。</p>
+<hr>
+<h2>2. S2（= Q2_0 の正規形）のビット配置</h2>
+<p><strong>全 38 GiB のうち 31.64 GiB が S2</strong>。したがって S2 のカーネルが勝敗を決める。</p>
+<pre><code> 1 グループ = 64 要素
+ ┌───────────────────────────────┬──────────────┐
+ │ codes: 64 × 2bit = 16 バイト  │ scale: FP32  │
+ └───────────────────────────────┴──────────────┘
+   バイト i に 要素 4i, 4i+1, 4i+2, 4i+3 が入る（LSB ファースト）
+   bit 位置:  要素 4i+k は ビット [2k, 2k+2)
+
+   復号:  w = (code + bias) * scale      bias = -1 は【整数域で】足す
+</code></pre>
+<p>「bias を整数域で足す」が重要。<code>(float)code * scale - scale</code> と書くと丸めが 1 回増える。
+<code>docs/pack-format.md</code> §3.1 に、この点が「正規形（canonical form）」として定義されている。</p>
+<h3>テンソルの格納順</h3>
+<p>GGUF 順 <code>[n_in, n_out]</code>、<strong>n_in が連続</strong>。つまり出力行 <code>o</code> は
+<code>n_in / group_elems</code> グループの連続した並びで、行の先頭は必ずグループ境界。
+だからカーネルは「行ポインタ + グループ走査」だけで済む（転置不要）。</p>
+<hr>
+<h2>3. 活性の量子化 — Q8_0 / Q8_1 / Q8_K</h2>
+<p>ggml の GEMV は「重み × 活性」を整数ドット積でやるために、<strong>活性を重みの <code>vec_dot_type</code> に
+変換してから</strong>掛ける（<code>ref/quant.py</code> の <code>apply_src1</code>）。Strata も同じ規則に従う。</p>
+<table>
+<thead>
+<tr>
+<th>形式</th>
+<th>ブロック</th>
+<th>中身</th>
+<th>使う場所</th>
+</tr>
+</thead>
+<tbody><tr>
+<td>Q8_0</td>
+<td>32 要素 / <strong>34 B</strong></td>
+<td>fp16 d + int8 qs[32]</td>
+<td>レガシー形式（Q4_0/Q5_0/IQ4_NL…）の <code>vec_dot_type</code></td>
+</tr>
+<tr>
+<td>Q8_1</td>
+<td>32 要素 / <strong>36 B</strong></td>
+<td>fp16 d + fp16 s + int8 qs[32]</td>
+<td>llama.cpp MMVQ 系（<code>native_mmvq</code>）</td>
+</tr>
+<tr>
+<td>Q8_K</td>
+<td>256 要素 / <strong>292 B</strong></td>
+<td>f32 d + int8 qs[256] + int16 bsums[16]</td>
+<td>K-quant / IQ4_XS</td>
+</tr>
+</tbody></table>
+<p><code>bsums</code> は Strata では読まない（ggml の AVX2 用）が、<strong>ストライドに含まれる</strong>ので
+<code>quantize_q8_K</code> の出力をそのまま渡せる。</p>
+<h3>構造的な制約</h3>
+<p><code>ffn_down_shexp</code> は <strong>n_in = 640</strong>。256 の倍数ではないので <strong>Q8_K は物理的に不可能</strong>。
+だからこのテンソル専用に <code>s_gemv_q8_0_split</code> がある（第 3 章）。
+「Q8_K が未実装」ではなく「この形では実装できない」のが正しい理解。</p>
+<h3>罠: d32 の丸め</h3>
+<p><code>quantize_act.cu</code> の冒頭:</p>
+<blockquote>
+<p><code>d32 = amax / 127.0f</code> は <strong>FP32</strong> で計算し、量子化後の整数は <strong>d32 で割る</strong>。
+保存される fp16 丸め値で割ると、ggml のバイト列と <strong>80 ブロック中 18 ブロック</strong>が食い違った。
+しかも Q2_0 expert は Q8_0 に変換されるので、誤差は 48 個の MoE ブロック全部に乗り、
+<strong>end-to-end の KL を悪化させた</strong>。</p>
+</blockquote>
+<p>「保存する値」と「計算に使う値」を混同すると、目に見えない形でモデル全体が劣化する典型例。</p>
+<hr>
+<h2>4. i-quant のブロックサイズ</h2>
+<p><code>moe_fused_iq.cu</code> が扱う形式（<code>static_assert</code> でサイズを固定）:</p>
+<table>
+<thead>
+<tr>
+<th>形式</th>
+<th>ブロックバイト</th>
+<th>備考</th>
+</tr>
+</thead>
+<tbody><tr>
+<td>IQ2_XXS</td>
+<td>66</td>
+<td>コードブック + 符号ビット、8 要素単位のスケール</td>
+</tr>
+<tr>
+<td>IQ2_XS</td>
+<td>74</td>
+<td></td>
+</tr>
+<tr>
+<td>IQ2_S</td>
+<td>82</td>
+<td></td>
+</tr>
+<tr>
+<td>IQ3_XXS</td>
+<td>98</td>
+<td></td>
+</tr>
+<tr>
+<td>IQ3_S</td>
+<td>110</td>
+<td></td>
+</tr>
+<tr>
+<td>IQ4_XS</td>
+<td>136</td>
+<td>32 要素ごとに scale</td>
+</tr>
+<tr>
+<td>Q2_0</td>
+<td>18</td>
+<td>codes 16B + fp16 d</td>
+</tr>
+</tbody></table>
+<p>※ 2 バイト境界に整列しているので 16bit ロードで読める、という前提が
+<code>moe_fused_iq.cu</code> のロード段の設計に効いている。</p>
+<hr>
+<h2>5. 整数ドット積を float にする「魔法の float」</h2>
+<p><code>moe_fused.cu</code>（prefill の Q2_0 経路）の核心。int8 テンソルコアは int32 を返すので、
+これを float に変換すると 1 命令（I2F, 高コスト）かかる。Strata はこれを消す:</p>
+<pre><code class="language-cpp">// 1.5 * 2^23 = 0x4B400000。この仮数部に int をそのまま足すと、
+// 指数部が変わらない範囲（|dot| &lt; 2^22）で float の値が 1.5*2^23 + dot になる
+as_float(0x4B400000 + dot) - 1.5f*2^23  ==  (float)dot   // 丸めなし・I2F なし
+</code></pre>
+<p>Q2_0 の場合、重みは <code>w = d_w*(q-1)</code>、活性は <code>x = d_x*a</code> なので</p>
+<pre><code>Σ w x = d_w * d_x * (Σ q a - Σ a)
+</code></pre>
+<p><code>Σa</code> は活性ブロックに保存済み（<code>c = -(1.5*2^23 + Σa)</code>）。したがって</p>
+<pre><code class="language-cpp">acc += d_w * (d_x0 * t0 + d_x1 * t1);   // t = dot - Σa, 整数 2 回 + float 3 回
+</code></pre>
+<p>で 1 ブロック分が終わる。<strong>変換命令ゼロ</strong>。この発想は <code>moe_fused_iq.cu</code> にも展開されていて、
+そちらは <code>MAGICF</code> という名前で同じトリックを使う。</p>
+<hr>
+<h2>6. まとめ表: どこで何が量子化されるか</h2>
+<table>
+<thead>
+<tr>
+<th>段階</th>
+<th>形式</th>
+<th>実装</th>
+</tr>
+</thead>
+<tbody><tr>
+<td>パック（オフライン）</td>
+<td>S2/S4/S8, IQ 系, K-quant</td>
+<td><code>docs/pack-format.md</code></td>
+</tr>
+<tr>
+<td>活性（decode）</td>
+<td>Q8_0 / Q8_K / Q8_1</td>
+<td><code>quantize_act.cu</code>, <code>native_mmvq.cu</code></td>
+</tr>
+<tr>
+<td>重み読み出し（decode）</td>
+<td>そのまま（復号しながら掛ける）</td>
+<td><code>s_gemv.cu</code>, <code>iq_kernels.cu</code></td>
+</tr>
+<tr>
+<td>重み（prefill）</td>
+<td>int8 に展開してテンソルコアへ</td>
+<td><code>moe_fused.cu</code>, <code>moe_fused_iq.cu</code></td>
+</tr>
+<tr>
+<td>KV</td>
+<td>f16 → q8 → q4（Hadamard 回転）</td>
+<td><code>kv_q8.cu</code>, <code>kv_q4.cu</code>, <code>cvec.cu</code></td>
+</tr>
+</tbody></table>
+<hr>
+<p><em>次: <a href="03_decode_gemv.html">03 Decode GEMV</a> — 31.64 GiB を読むカーネルの全注釈。</em></p>
+</article><footer><a href="01_memory.html">← 01. メモリ階層 — SSD から SMEM まで</a> ・ <a href="03_decode_gemv.html">03. Decode GEMV — 31.64 GiB を 1 トークンで読む →</a><br>出典: strata:~/Strata HEAD 61b3fb5 (v0.1.49) ／ 図は PNG（1000px 幅）</footer></div></body></html>
